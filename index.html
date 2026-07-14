@@ -85,11 +85,14 @@
         }
 
         .date-section input[type="date"] {
-            width: 100%;
-            padding: 10px;
+            width: 50%;
+            max-width: 190px;
+            min-width: 150px;
+            padding: 2px 8px;
+            height: 24px;
             border: 2px solid #cbd5e1;
             border-radius: 6px;
-            font-size: 16px;
+            font-size: 12px;
             color: #334155;
         }
 
@@ -498,7 +501,12 @@
             }
 
             .date-section input[type="date"] {
-                font-size: 16px;
+                width: 50%;
+                max-width: 170px;
+                min-width: 130px;
+                height: 22px;
+                padding: 1px 6px;
+                font-size: 11px;
             }
         }
     </style>
@@ -621,6 +629,7 @@
         let fetchingStatusCache = {}; // { fileName: 'fetching'|'done'|'failed' }
         let backgroundFetchQueue = []; // バックグラウンド取得待ちキュー
         let isBackgroundFetching = false; // バックグラウンド取得中フラグ
+        let currentRenderToken = 0; // 古い描画処理を破棄するためのトークン
         const MAX_CONCURRENT_REQUESTS = 6; // 並行リクエスト数（ブラウザ制限に合わせる）
         const PRIORITY_RANGE_HOURS = 6; // ± 6時間を優先取得
 
@@ -929,10 +938,8 @@
                 }
 
                 // 取得フェーズ3: 残りを未来→過去の順でバックグラウンド取得
-                const futureRemaining = fullFileNames.slice(secondaryEnd);
-                const pastRemaining = fullFileNames.slice(0, centerIndex).reverse();
-                backgroundFetchQueue = [...futureRemaining, ...pastRemaining];
-                addDebugLog(`🔄 バックグラウンド取得キュー作成: ${backgroundFetchQueue.length}枚（未来→過去）`, 'info');
+                backgroundFetchQueue = buildNearbyFirstQueue(fullFileNames, centerIndex, secondaryEnd);
+                addDebugLog(`🔄 バックグラウンド取得キュー作成: ${backgroundFetchQueue.length}枚（近傍優先）`, 'info');
                 startBackgroundFetch();
                 
                 const elapsedTime = Date.now() - startTime;
@@ -1049,7 +1056,7 @@
             addDebugLog(`🔄 バックグラウンド取得開始: ${backgroundFetchQueue.length}枚`, 'info');
 
             try {
-                const BG_BATCH_SIZE = 30;
+                const BG_BATCH_SIZE = 12;
                 while (backgroundFetchQueue.length > 0) {
                     const batch = [];
 
@@ -1090,13 +1097,12 @@
                 return;
             }
 
+            const renderToken = ++currentRenderToken;
             const fileName = tideImages[currentImageIndex];
             updateSliderValue();
             addDebugLog(`📸 画像を更新: ${fileName} (index: ${currentImageIndex})`, 'info');
 
             try {
-                showLoading();
-
                 // ★ 修正：キャッシュをチェック
                 if (imageBlobCache[fileName]) {
                     addDebugLog(`✓ キャッシュから画像を取得`, 'success');
@@ -1104,19 +1110,26 @@
                     tideImage.style.display = 'block';
                     loadingMessage.style.display = 'none';
                     showImageInfo(fileName);
+                    prefetchAroundIndex(currentImageIndex);
                     return;
                 }
+
+                showLoading();
 
                 // キャッシュにない場合は、現在位置から先1時間分（6枚）を優先取得
                 addDebugLog(`⏳ キャッシュ未取得のため、先1時間分を優先取得します...`, 'info');
                 const startTime = Date.now();
                 const PRIORITY_FETCH_COUNT = 6;
                 const priorityFileNames = tideImages
-                    .slice(currentImageIndex, Math.min(currentImageIndex + PRIORITY_FETCH_COUNT, tideImages.length))
+                    .slice(Math.max(0, currentImageIndex - 2), Math.min(currentImageIndex + PRIORITY_FETCH_COUNT, tideImages.length))
                     .filter(name => !imageBlobCache[name]);
 
                 if (priorityFileNames.length > 0) {
                     await fetchTideImageBatch(priorityFileNames);
+                }
+
+                if (renderToken !== currentRenderToken) {
+                    return;
                 }
                 
                 const elapsedTime = Date.now() - startTime;
@@ -1128,16 +1141,22 @@
                     tideImage.style.display = 'block';
                     loadingMessage.style.display = 'none';
                     showImageInfo(fileName);
+                    prefetchAroundIndex(currentImageIndex);
                 } else {
                     // 最終フォールバック: 単体取得を一度だけ試す
                     addDebugLog(`⚠️ 優先取得で未取得のため単体取得を試行します: ${fileName}`, 'warning');
                     await fetchSingleImage(fileName);
+
+                    if (renderToken !== currentRenderToken) {
+                        return;
+                    }
 
                     if (imageBlobCache[fileName]) {
                         tideImage.src = imageBlobCache[fileName];
                         tideImage.style.display = 'block';
                         loadingMessage.style.display = 'none';
                         showImageInfo(fileName);
+                        prefetchAroundIndex(currentImageIndex);
                     } else {
                         throw new Error('取得に失敗しました');
                     }
@@ -1147,6 +1166,49 @@
                 addDebugLog(`✗ エラー: ${error.message}`, 'error');
                 console.error('Error updating image:', error);
                 showError(`画像表示エラー: ${error.message}`);
+            }
+        }
+
+        function buildNearbyFirstQueue(fileNames, centerIndex, secondaryEnd) {
+            const queue = [];
+            let right = secondaryEnd;
+            let left = centerIndex - 1;
+
+            while (right < fileNames.length || left >= 0) {
+                if (right < fileNames.length) {
+                    queue.push(fileNames[right]);
+                    right++;
+                }
+                if (left >= 0) {
+                    queue.push(fileNames[left]);
+                    left--;
+                }
+            }
+
+            return queue;
+        }
+
+        async function prefetchAroundIndex(index) {
+            const PREFETCH_RADIUS = 4;
+            const start = Math.max(0, index - PREFETCH_RADIUS);
+            const end = Math.min(tideImages.length - 1, index + PREFETCH_RADIUS);
+            const targets = [];
+
+            for (let i = start; i <= end; i++) {
+                const name = tideImages[i];
+                if (!imageBlobCache[name] && fetchingStatusCache[name] !== 'fetching') {
+                    targets.push(name);
+                }
+            }
+
+            if (targets.length === 0) {
+                return;
+            }
+
+            try {
+                await fetchTideImageBatch(targets);
+            } catch (error) {
+                addDebugLog(`⚠️ 近傍プリフェッチ失敗（継続）: ${error.message}`, 'warning');
             }
         }
 
