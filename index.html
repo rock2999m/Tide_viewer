@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#1e3a8a">
     <title>MIRC潮流予測ビューア</title>
     <link rel="manifest" href="manifest.json">
@@ -17,10 +17,16 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
             min-height: 100vh;
+            min-height: 100dvh;
             padding: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
+            padding-left: max(10px, env(safe-area-inset-left));
+            padding-right: max(10px, env(safe-area-inset-right));
+            padding-top: max(10px, env(safe-area-inset-top));
+            padding-bottom: max(10px, env(safe-area-inset-bottom));
+            touch-action: manipulation;
         }
 
         .container {
@@ -30,6 +36,8 @@
             max-width: 900px;
             width: 100%;
             overflow: hidden;
+            max-height: calc(100dvh - 20px);
+            overflow-y: auto;
         }
 
         .header {
@@ -102,10 +110,10 @@
             overflow: hidden;
             margin-bottom: 20px;
             aspect-ratio: 16 / 9;
+            height: clamp(220px, 46dvh, 420px);
             display: flex;
             align-items: center;
             justify-content: center;
-            min-height: 300px;
             position: relative;
         }
 
@@ -239,6 +247,15 @@
             align-items: center;
             justify-content: center;
             gap: 8px;
+            min-height: 44px;
+            touch-action: manipulation;
+        }
+
+        input,
+        select,
+        textarea,
+        input[type="range"] {
+            touch-action: manipulation;
         }
 
         .btn-prev {
@@ -383,12 +400,21 @@
 
         /* ========== レスポンシブ ========== */
         @media (max-width: 600px) {
+            body {
+                align-items: flex-start;
+            }
+
+            .container {
+                border-radius: 10px;
+                max-height: none;
+            }
+
             .header h1 {
                 font-size: 22px;
             }
 
             .image-display {
-                min-height: 200px;
+                height: clamp(220px, 40dvh, 320px);
             }
 
             button {
@@ -401,6 +427,58 @@
                 flex-direction: column;
                 gap: 5px;
                 text-align: center;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+
+            .slider-container {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 8px;
+            }
+
+            .slider-value {
+                text-align: left;
+                min-width: 0;
+            }
+
+            .controls,
+            .date-section {
+                padding: 14px;
+            }
+
+            .debug-panel {
+                max-height: 160px;
+                font-size: 11px;
+            }
+        }
+
+        @media (max-width: 430px) {
+            .content {
+                padding: 14px;
+            }
+
+            .header {
+                padding: 16px;
+            }
+
+            .header h1 {
+                font-size: 20px;
+            }
+
+            .header p {
+                font-size: 13px;
+            }
+
+            .date-section label,
+            .slider-section label {
+                font-size: 13px;
+            }
+
+            .date-section input[type="date"] {
+                font-size: 16px;
             }
         }
     </style>
@@ -507,6 +585,7 @@
         const AFTER_HOURS = 48;
         const TOTAL_HOURS = BEFORE_HOURS + AFTER_HOURS;
         const IMAGE_INTERVAL = 10; // 分
+        const FETCH_TIMEOUT_MS = 15000;
 
         // ============ デバッグ用グローバル変数 ============
         let debugMode = true;
@@ -548,18 +627,42 @@
             const today = new Date();
             const dateStr = formatDate(today);
             datePicker.value = dateStr;
+            selectedDate = new Date(dateStr);
             addDebugLog(`📅 デフォルト日付: ${dateStr}`, 'info');
             
             // Service Worker登録（PWA化）
             if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('tide-chart-viewer-sw.js')
+                navigator.serviceWorker.register('sw.js')
                     .then(() => addDebugLog('✓ Service Worker登録成功', 'success'))
                     .catch((err) => addDebugLog(`✗ Service Worker登録失敗: ${err.message}`, 'warning'));
             }
 
+            setupTouchGuards();
             addDebugLog('✓ 初期化完了', 'success');
             loadTideImages();
         });
+
+        function setupTouchGuards() {
+            let lastTouchEnd = 0;
+
+            document.addEventListener('touchend', (event) => {
+                const now = Date.now();
+                if (now - lastTouchEnd <= 300) {
+                    event.preventDefault();
+                }
+                lastTouchEnd = now;
+            }, { passive: false });
+        }
+
+        async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                return await fetch(url, { ...options, signal: controller.signal });
+            } finally {
+                clearTimeout(timer);
+            }
+        }
 
         // ============ イベントリスナー ============
         datePicker.addEventListener('change', (e) => {
@@ -852,14 +955,14 @@
                         fileNames: chunkFileNames
                     };
 
-                    const workerResponse = await fetch(`${WORKER_BASE_URL}/api/tideFetchBatch`, {
+                    const workerResponse = await fetchWithTimeout(`${WORKER_BASE_URL}/api/tideFetchBatch`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-Auth-Token': WORKERS_AUTH_TOKEN
                         },
                         body: JSON.stringify(workerPayload)
-                    });
+                    }, FETCH_TIMEOUT_MS);
 
                     if (!workerResponse.ok) {
                         throw new Error(`Worker HTTP ${workerResponse.status} (chunk ${chunkIndex + 1}/${totalChunks})`);
@@ -1102,14 +1205,14 @@
                     date: dateStr
                 };
 
-                const workerResponse = await fetch(`${WORKER_BASE_URL}/api/getTideImagesFromDrive`, {
+                const workerResponse = await fetchWithTimeout(`${WORKER_BASE_URL}/api/getTideImagesFromDrive`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-Auth-Token': WORKERS_AUTH_TOKEN
                     },
                     body: JSON.stringify(workerPayload)
-                });
+                }, FETCH_TIMEOUT_MS);
 
                 if (!workerResponse.ok) {
                     throw new Error(`Worker HTTP ${workerResponse.status}`);
@@ -1130,7 +1233,7 @@
                 addDebugLog(`🔗 sharingUrl を取得: ${imageInfo.sharingUrl.substring(0, 50)}...`, 'success');
 
                 // ★ sharingUrl から直接画像をフェッチ
-                const imageRes = await fetch(imageInfo.sharingUrl);
+                const imageRes = await fetchWithTimeout(imageInfo.sharingUrl, {}, FETCH_TIMEOUT_MS);
                 if (!imageRes.ok) {
                     throw new Error(`Image download failed: HTTP ${imageRes.status}`);
                 }
@@ -1148,12 +1251,6 @@
                 addDebugLog(`✗ 取得失敗: ${fileName} - ${error.message}`, 'error');
                 throw error;
             }
-        }
-
-        // ★ 修正：進捗表示はバッチ取得完了で不要（全て一度に取得）
-        function updateProgressPanel() {
-            // バッチ取得は全て一度に取得されるため、進捗表示は不要
-            // 従来の優先/背景取得用の関数のため、ここでは無視
         }
 
         // ============ UI更新 ============
