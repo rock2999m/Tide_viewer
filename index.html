@@ -1,181 +1,1287 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#1e3a8a" />
-  <title>Tide Chart Viewer</title>
-  <link rel="manifest" href="./manifest.json" />
-  <style>
-    :root {
-      --bg: #0b1d4a;
-      --bg2: #1e3a8a;
-      --card: #ffffff;
-      --text: #0f172a;
-      --muted: #64748b;
-      --accent: #3b82f6;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1e3a8a">
+    <title>MIRC潮流予測ビューア</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-    * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            min-height: 100vh;
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
 
-    body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
-      background: linear-gradient(135deg, var(--bg) 0%, var(--bg2) 100%);
-      color: var(--text);
-      display: grid;
-      place-items: center;
-      padding: 16px;
-    }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 900px;
+            width: 100%;
+            overflow: hidden;
+        }
 
-    .app {
-      width: min(960px, 100%);
-      background: var(--card);
-      border-radius: 14px;
-      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
-      overflow: hidden;
-    }
+        .header {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
 
-    .header {
-      background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
-      color: #fff;
-      padding: 18px 20px;
-    }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
 
-    .header h1 {
-      margin: 0;
-      font-size: 24px;
-    }
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
 
-    .header p {
-      margin: 4px 0 0;
-      font-size: 13px;
-      opacity: 0.9;
-    }
+        .content {
+            padding: 20px;
+        }
 
-    .content {
-      padding: 18px;
-      display: grid;
-      gap: 14px;
-    }
+        /* ========== 日付・時刻セクション ========== */
+        .date-section {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #e2e8f0;
+        }
 
-    .panel {
-      border: 1px solid #dbe3f0;
-      border-radius: 10px;
-      padding: 14px;
-      background: #f8fafc;
-    }
+        .date-section label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #1e3a8a;
+        }
 
-    .panel h2 {
-      margin: 0 0 10px;
-      font-size: 15px;
-      color: #1e3a8a;
-    }
+        .date-section input[type="date"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 16px;
+            color: #334155;
+        }
 
-    label {
-      font-size: 13px;
-      font-weight: 600;
-      display: block;
-      margin-bottom: 6px;
-    }
+        .date-section input[type="date"]:focus {
+            outline: none;
+            border-color: #3b82f6;
+            background: white;
+        }
 
-    input[type="date"] {
-      width: 100%;
-      padding: 10px;
-      border: 1px solid #cbd5e1;
-      border-radius: 8px;
-      font-size: 15px;
-    }
+        .date-info {
+            margin-top: 10px;
+            font-size: 13px;
+            color: #64748b;
+            line-height: 1.6;
+        }
 
-    .viewer {
-      aspect-ratio: 16 / 9;
-      border-radius: 10px;
-      background: #000;
-      color: #fff;
-      display: grid;
-      place-items: center;
-      min-height: 220px;
-      font-size: 14px;
-      text-align: center;
-      padding: 10px;
-    }
+        .date-info strong {
+            color: #1e3a8a;
+        }
 
-    .muted {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.6;
-    }
+        /* ========== 画像表示エリア ========== */
+        .image-display {
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            aspect-ratio: 16 / 9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 300px;
+            position: relative;
+        }
 
-    .controls {
-      display: grid;
-      gap: 10px;
-    }
+        .image-display img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            width: 100%;
+            height: 100%;
+        }
 
-    .row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
+        .image-display .loading {
+            color: white;
+            font-size: 14px;
+            text-align: center;
+        }
 
-    .row button {
-      border: none;
-      border-radius: 8px;
-      background: var(--accent);
-      color: #fff;
-      padding: 10px 14px;
-      font-weight: 600;
-      cursor: pointer;
-    }
+        .image-display .error {
+            color: #ff6b6b;
+            font-size: 14px;
+            text-align: center;
+        }
 
-    .row button.secondary {
-      background: #0ea5a4;
-    }
+        .image-info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
 
-    #debug {
-      margin: 0;
-      max-height: 180px;
-      overflow: auto;
-      font-size: 12px;
-      background: #111827;
-      color: #cbd5e1;
-      border-radius: 8px;
-      padding: 10px;
-      white-space: pre-wrap;
-    }
-  </style>
+        .image-timestamp {
+            font-weight: 600;
+        }
+
+        .image-count {
+            font-size: 11px;
+            opacity: 0.8;
+        }
+
+        /* ========== コントロールセクション ========== */
+        .controls {
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+
+        /* スライダー */
+        .slider-section {
+            margin-bottom: 20px;
+        }
+
+        .slider-section label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #1e3a8a;
+            font-size: 14px;
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        input[type="range"] {
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: #cbd5e1;
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+        }
+
+        .slider-value {
+            min-width: 80px;
+            text-align: right;
+            font-weight: 600;
+            color: #1e3a8a;
+            font-size: 14px;
+        }
+
+        /* 矢印ボタン */
+        .button-group {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-prev {
+            background: #ef4444;
+            color: white;
+            flex: 1;
+        }
+
+        .btn-prev:hover {
+            background: #dc2626;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-prev:active {
+            transform: translateY(0);
+        }
+
+        .btn-next {
+            background: #10b981;
+            color: white;
+            flex: 1;
+        }
+
+        .btn-next:hover {
+            background: #059669;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-next:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* ========== キャッシュ情報 ========== */
+        .cache-info {
+            margin-top: 20px;
+            padding: 10px;
+            background: #dcfce7;
+            border: 1px solid #86efac;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #15803d;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .cache-info.expired {
+            background: #fecaca;
+            border-color: #fca5a5;
+            color: #991b1b;
+        }
+
+        /* ========== デバッグパネル ========== */
+        .debug-panel {
+            margin-top: 30px;
+            padding: 15px;
+            background: #1f2937;
+            border-radius: 8px;
+            color: #e5e7eb;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #374151;
+        }
+
+        .debug-panel h3 {
+            color: #60a5fa;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .debug-log {
+            line-height: 1.6;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #374151;
+        }
+
+        .debug-log.error {
+            color: #ff6b6b;
+        }
+
+        .debug-log.success {
+            color: #51cf66;
+        }
+
+        .debug-log.info {
+            color: #60a5fa;
+        }
+
+        .debug-log.warning {
+            color: #fbbf24;
+        }
+
+        .debug-button {
+            background: #374151;
+            color: #e5e7eb;
+            border: 1px solid #4b5563;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+
+        .debug-button:hover {
+            background: #4b5563;
+        }
+
+        .app-footer {
+            margin-top: 14px;
+            padding-top: 10px;
+            border-top: 1px solid #e2e8f0;
+            text-align: right;
+            color: #64748b;
+            font-size: 12px;
+        }
+
+        /* ========== ローディング状態 ========== */
+        .loader {
+            border: 3px solid #e2e8f0;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* ========== レスポンシブ ========== */
+        @media (max-width: 600px) {
+            .header h1 {
+                font-size: 22px;
+            }
+
+            .image-display {
+                min-height: 200px;
+            }
+
+            button {
+                padding: 10px 16px;
+                font-size: 14px;
+            }
+
+            .image-info {
+                font-size: 11px;
+                flex-direction: column;
+                gap: 5px;
+                text-align: center;
+            }
+        }
+    </style>
 </head>
 <body>
-  <main class="app">
-    <header class="header">
-      <h1>Tide Chart Viewer</h1>
-      <p>GitHub 実装用の新規プロジェクトひな形</p>
-    </header>
-
-    <section class="content">
-      <div class="panel">
-        <h2>日付選択</h2>
-        <label for="datePicker">表示基準日</label>
-        <input id="datePicker" type="date" />
-        <p class="muted">ここから先は手動実装向け。既存フォルダ内の他アプリファイルには依存していません。</p>
-      </div>
-
-      <div class="panel">
-        <h2>ビューア</h2>
-        <div id="viewer" class="viewer">画像表示領域（未実装）</div>
-      </div>
-
-      <div class="panel controls">
-        <h2>操作</h2>
-        <div class="row">
-          <button id="btnLoad">読み込み</button>
-          <button class="secondary" id="btnClear">ログクリア</button>
+    <div class="container">
+        <!-- ヘッダー -->
+        <div class="header">
+            <h1>🌊 Tide Chart Viewer</h1>
+            <p>潮汐流予測画像ビューア</p>
         </div>
-        <pre id="debug"></pre>
-      </div>
-    </section>
-  </main>
 
-  <script src="./app.js"></script>
+        <!-- コンテンツ -->
+        <div class="content">
+            <!-- 日付選択 -->
+            <div class="date-section">
+                <label for="datePicker">📅 日付を選択してください</label>
+                <input type="date" id="datePicker">
+                <div class="date-info">
+                    <div>✓ 表示範囲: 選択日 AM 7:00 の前24時間 ～ 後48時間（計72時間）</div>
+                    <div id="dateRangeInfo" style="margin-top: 8px; color: #1e3a8a;"></div>
+                </div>
+            </div>
+
+            <!-- 画像表示エリア -->
+            <div class="image-display">
+                <img id="tideImage" alt="潮汐流予測画像" crossorigin="anonymous" style="display: none;">
+                <div id="loadingMessage" class="loading">
+                    <div class="loader"></div>
+                    <p style="margin-top: 10px;">画像を読み込み中...</p>
+                </div>
+            </div>
+
+            <!-- コントロール -->
+            <div class="controls">
+                <!-- スライダー -->
+                <div class="slider-section">
+                    <label for="imageSlider">🎚️ 画像を選択 (スライダー)</label>
+                    <div class="slider-container">
+                        <input type="range" id="imageSlider" min="0" max="0" value="0">
+                        <div class="slider-value">
+                            <span id="sliderValue">0 / 0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 矢印ボタン -->
+                <div class="button-group">
+                    <button class="btn-prev" id="btnPrev">
+                        <span>◀ 前の画像</span>
+                    </button>
+                    <button class="btn-next" id="btnNext">
+                        <span>次の画像 ▶</span>
+                    </button>
+                </div>
+
+                <!-- キャッシュ情報 -->
+                <div class="cache-info" id="cacheInfo" style="display: none;">
+                    <span id="cacheMessage"></span>
+                    <span style="cursor: pointer; user-select: none;" onclick="clearCache()">✕ キャッシュクリア</span>
+                </div>
+
+                <!-- ★ 新規：取得進捗パネル -->
+                <div style="margin-top: 15px; padding: 12px; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 6px; display: none;" id="progressPanel">
+                    <div style="margin-bottom: 8px; font-size: 13px; color: #1e40af; font-weight: 600;">
+                        📊 画像取得進捗
+                    </div>
+                    <div style="margin-bottom: 6px;">
+                        <strong id="priorityProgress">優先取得: 0%</strong>
+                        <div style="height: 6px; background: #dbeafe; border-radius: 3px; overflow: hidden;">
+                            <div id="priorityProgressBar" style="height: 100%; background: #3b82f6; width: 0%; transition: width 0.3s ease;"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <strong id="backgroundProgress">バックグラウンド: 0%</strong>
+                        <div style="height: 6px; background: #dbeafe; border-radius: 3px; overflow: hidden;">
+                            <div id="backgroundProgressBar" style="height: 100%; background: #10b981; width: 0%; transition: width 0.3s ease;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- デバッグパネル -->
+            <div class="debug-panel">
+                <h3>🔍 デバッグコンソール</h3>
+                <div id="debugLogs"></div>
+                <button class="debug-button" onclick="clearDebugLogs()">ログをクリア</button>
+                <button class="debug-button" onclick="toggleDebugDetails()">詳細情報表示</button>
+            </div>
+
+            <div class="app-footer">
+                Version: v1.0.0
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============ 定数 ============
+        const WORKER_BASE_URL = 'https://fishing-trip-api.yuji-fallline2999m.workers.dev';
+        const WORKERS_AUTH_TOKEN = 'token_dev_123';
+        const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24時間
+        const BASE_HOUR = 7; // AM 7:00
+        const BEFORE_HOURS = 24;
+        const AFTER_HOURS = 48;
+        const TOTAL_HOURS = BEFORE_HOURS + AFTER_HOURS;
+        const IMAGE_INTERVAL = 10; // 分
+
+        // ============ デバッグ用グローバル変数 ============
+        let debugMode = true;
+        let debugLogs = [];
+
+        // ============ グローバル変数 ============
+        let tideImages = []; // ファイル名一覧
+        let currentImageIndex = 0;
+        let selectedDate = null;
+        
+        // ★ 新規：イメージキャッシュシステム
+        let imageBlobCache = {}; // { fileName: blobUrl }
+        let fetchingStatusCache = {}; // { fileName: 'fetching'|'done'|'failed' }
+        let backgroundFetchQueue = []; // バックグラウンド取得待ちキュー
+        let isBackgroundFetching = false; // バックグラウンド取得中フラグ
+        const MAX_CONCURRENT_REQUESTS = 6; // 並行リクエスト数（ブラウザ制限に合わせる）
+        const PRIORITY_RANGE_HOURS = 6; // ± 6時間を優先取得
+
+        // ============ DOM要素 ============
+        const datePicker = document.getElementById('datePicker');
+        const tideImage = document.getElementById('tideImage');
+        const loadingMessage = document.getElementById('loadingMessage');
+        const imageSlider = document.getElementById('imageSlider');
+        const sliderValue = document.getElementById('sliderValue');
+        const btnPrev = document.getElementById('btnPrev');
+        const btnNext = document.getElementById('btnNext');
+        const cacheInfo = document.getElementById('cacheInfo');
+        const cacheMessage = document.getElementById('cacheMessage');
+        const dateRangeInfo = document.getElementById('dateRangeInfo');
+        const debugLogsContainer = document.getElementById('debugLogs');
+
+        // ============ 初期化 ============
+        window.addEventListener('load', () => {
+            addDebugLog('🚀 アプリケーション起動', 'info');
+            addDebugLog(`⚙️ Worker URL: ${WORKER_BASE_URL}`, 'info');
+            addDebugLog(`🔐 Auth Token: ${WORKERS_AUTH_TOKEN.substring(0, 8)}...`, 'warning');
+            
+            // 本日を初期値に設定
+            const today = new Date();
+            const dateStr = formatDate(today);
+            datePicker.value = dateStr;
+            addDebugLog(`📅 デフォルト日付: ${dateStr}`, 'info');
+            
+            // Service Worker登録（PWA化）
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('tide-chart-viewer-sw.js')
+                    .then(() => addDebugLog('✓ Service Worker登録成功', 'success'))
+                    .catch((err) => addDebugLog(`✗ Service Worker登録失敗: ${err.message}`, 'warning'));
+            }
+
+            addDebugLog('✓ 初期化完了', 'success');
+            loadTideImages();
+        });
+
+        // ============ イベントリスナー ============
+        datePicker.addEventListener('change', (e) => {
+            selectedDate = new Date(e.target.value);
+            addDebugLog(`📅 日付が変更されました: ${formatDate(selectedDate)}`, 'info');
+            currentImageIndex = 0;
+            clearImageCache(selectedDate); // 日付変更時はキャッシュクリア
+            imageBlobCache = {}; // ★ イメージブロブキャッシュもクリア
+            fetchingStatusCache = {}; // ★ 取得ステータスもクリア
+            backgroundFetchQueue = []; // ★ バックグラウンドキューもクリア
+            addDebugLog('🗑️ キャッシュをクリアしました', 'warning');
+            loadTideImages();
+        });
+
+        imageSlider.addEventListener('input', (e) => {
+            currentImageIndex = parseInt(e.target.value);
+            addDebugLog(`🎚️ スライダー移動: ${currentImageIndex + 1} / ${tideImages.length}`, 'info');
+            updateImage();
+        });
+
+        btnPrev.addEventListener('click', () => {
+            if (currentImageIndex > 0) {
+                currentImageIndex--;
+                imageSlider.value = currentImageIndex;
+                addDebugLog(`⬅️ 前の画像へ: ${currentImageIndex + 1}`, 'info');
+                updateImage();
+            }
+        });
+
+        btnNext.addEventListener('click', () => {
+            if (currentImageIndex < tideImages.length - 1) {
+                currentImageIndex++;
+                imageSlider.value = currentImageIndex;
+                addDebugLog(`➡️ 次の画像へ: ${currentImageIndex + 1}`, 'info');
+                updateImage();
+            }
+        });
+
+        // ============ 日付処理 ============
+        function formatDate(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function formatDateTime(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day} ${hours}:${minutes}`;
+        }
+
+        // ============ ファイル名生成 ============
+        function generateTideImageFileNames(selectedDate, beforeHours, afterHours) {
+            // 選択日付の AM 7:00 を基準に設定
+            const baseTime = new Date(selectedDate);
+            baseTime.setHours(BASE_HOUR, 0, 0, 0);
+
+            // 開始時刻 = baseTime - beforeHours
+            const startTime = new Date(baseTime.getTime() - beforeHours * 60 * 60 * 1000);
+
+            // 終了時刻 = baseTime + afterHours
+            const endTime = new Date(baseTime.getTime() + afterHours * 60 * 60 * 1000);
+
+            const fileNames = [];
+            let currentTime = new Date(startTime);
+
+            // 分を10分単位に丸める
+            const minutes = currentTime.getMinutes();
+            const roundedMinutes = Math.floor(minutes / 10) * 10;
+            currentTime.setMinutes(roundedMinutes, 0);
+
+            while (currentTime <= endTime) {
+                const year = currentTime.getFullYear();
+                const month = String(currentTime.getMonth() + 1).padStart(2, '0');
+                const day = String(currentTime.getDate()).padStart(2, '0');
+                const hours = String(currentTime.getHours()).padStart(2, '0');
+                const mins = String(currentTime.getMinutes()).padStart(2, '0');
+
+                const fileName = `${year}${month}${day}${hours}${mins}.png`;
+                fileNames.push(fileName);
+
+                currentTime.setMinutes(currentTime.getMinutes() + IMAGE_INTERVAL);
+            }
+
+            return fileNames;
+        }
+
+        // ============ キャッシング処理 ============
+        function getCacheKey(date) {
+            return `tideImages_${formatDate(date)}`;
+        }
+
+        function getImageCache(date) {
+            const key = getCacheKey(date);
+            const cached = localStorage.getItem(key);
+
+            if (!cached) return null;
+
+            const data = JSON.parse(cached);
+            const now = Date.now();
+
+            // キャッシュ有効期限チェック
+            if (now - data.timestamp > CACHE_DURATION) {
+                localStorage.removeItem(key);
+                return null;
+            }
+
+            return data.fileNames;
+        }
+
+        function setImageCache(date, fileNames) {
+            const key = getCacheKey(date);
+            const data = {
+                fileNames: fileNames,
+                timestamp: Date.now()
+            };
+            localStorage.setItem(key, JSON.stringify(data));
+        }
+
+        function clearImageCache(date = null) {
+            if (date) {
+                const key = getCacheKey(date);
+                localStorage.removeItem(key);
+            } else {
+                // 全キャッシュクリア
+                Object.keys(localStorage).forEach(key => {
+                    if (key.startsWith('tideImages_')) {
+                        localStorage.removeItem(key);
+                    }
+                });
+            }
+            updateCacheInfo();
+        }
+
+        function updateCacheInfo() {
+            const key = getCacheKey(selectedDate);
+            const cached = localStorage.getItem(key);
+
+            if (!cached) {
+                cacheInfo.style.display = 'none';
+                return;
+            }
+
+            const data = JSON.parse(cached);
+            const elapsed = Math.floor((Date.now() - data.timestamp) / 1000 / 60); // 分単位
+
+            cacheInfo.style.display = 'flex';
+            cacheMessage.textContent = `📦 キャッシュ: ${elapsed}分前に取得`;
+
+            if (Date.now() - data.timestamp > CACHE_DURATION) {
+                cacheInfo.classList.add('expired');
+                cacheMessage.textContent = `⏰ キャッシュ有効期限切れ`;
+            } else {
+                cacheInfo.classList.remove('expired');
+            }
+        }
+
+        // ★ 新規：取得進捗パネルを更新
+        function updateProgressPanel() {
+            const progressPanel = document.getElementById('progressPanel');
+            const priorityCount = Object.values(fetchingStatusCache).filter(s => s === 'done' || s === 'fetching').length;
+            const totalCount = tideImages.length;
+            
+            if (priorityCount > 0 && priorityCount < totalCount) {
+                progressPanel.style.display = 'block';
+                const progress = Math.round((priorityCount / totalCount) * 100);
+                
+                // 優先取得と背景取得の進捗を分けて表示
+                const priorityDone = Object.keys(imageBlobCache).length;
+                const priorityTotal = tideImages.length;
+                const priorityPercent = Math.round((priorityDone / priorityTotal) * 100);
+                
+                document.getElementById('priorityProgress').textContent = `優先取得: ${priorityPercent}%`;
+                document.getElementById('priorityProgressBar').style.width = `${priorityPercent}%`;
+                
+                const bgRemaining = backgroundFetchQueue.length;
+                const bgTotal = bgRemaining + Object.keys(imageBlobCache).length;
+                const bgPercent = bgTotal > 0 ? Math.round(((bgTotal - bgRemaining) / bgTotal) * 100) : 0;
+                
+                document.getElementById('backgroundProgress').textContent = `バックグラウンド: ${bgPercent}%`;
+                document.getElementById('backgroundProgressBar').style.width = `${bgPercent}%`;
+            } else {
+                progressPanel.style.display = 'none';
+            }
+        }
+
+        // ★ 旧：定期的に進捗表示を更新（バッチ取得で不要）
+        // setInterval(updateProgressPanel, 500);
+
+        // ============ 画像読み込み ============
+        async function loadTideImages() {
+            if (!selectedDate) return;
+
+            addDebugLog(`📅 日付選択: ${formatDate(selectedDate)}`, 'info');
+            showLoading();
+            updateDateRangeInfo();
+
+            try {
+                // ★ 修正：前後24時間（48時間分、288個）のファイル名を全て生成
+                addDebugLog(`🔍 288個のファイル名を生成中...`, 'info');
+                const fullFileNames = generateTideImageFileNames(selectedDate, 24, 24); // 前24h + 後24h
+                
+                if (fullFileNames.length === 0) {
+                    throw new Error('ファイル名の生成に失敗しました');
+                }
+
+                addDebugLog(`✓ ファイル名生成完了: ${fullFileNames.length}個`, 'success');
+                tideImages = fullFileNames;
+
+                // UIを更新
+                updateSliderRange();
+                
+                // ★ 初期表示位置を選択日付のAM7:00に設定
+                const imagesPerHour = 60 / IMAGE_INTERVAL; // 6画像/時間
+                const centerIndex = Math.floor(24 * imagesPerHour); // 開始(前日7:00)から24時間後 = 選択日7:00
+                currentImageIndex = centerIndex;
+                imageSlider.value = centerIndex;
+                addDebugLog(`🎚️ スライダーをリセット (${centerIndex} / ${fullFileNames.length})`, 'info');
+
+                // 取得フェーズ1: 初期位置から1時間分（6枚）を最優先
+                const startTime = Date.now();
+                const priorityCount = 6;
+                const secondaryCount = 30;
+
+                const priorityFileNames = fullFileNames.slice(centerIndex, Math.min(centerIndex + priorityCount, fullFileNames.length));
+                addDebugLog(`⚡ 優先取得フェーズ1: ${priorityFileNames.length}枚`, 'info');
+                await fetchTideImageBatch(priorityFileNames);
+
+                // 最初の画像を表示（優先取得後すぐ表示）
+                await updateImage();
+
+                // 取得フェーズ2: 続く5時間分（30枚）を取得
+                const secondaryStart = Math.min(centerIndex + priorityCount, fullFileNames.length);
+                const secondaryEnd = Math.min(secondaryStart + secondaryCount, fullFileNames.length);
+                const secondaryFileNames = fullFileNames.slice(secondaryStart, secondaryEnd);
+
+                if (secondaryFileNames.length > 0) {
+                    addDebugLog(`⚡ 優先取得フェーズ2: ${secondaryFileNames.length}枚`, 'info');
+                    await fetchTideImageBatch(secondaryFileNames);
+                }
+
+                // 取得フェーズ3: 残りを未来→過去の順でバックグラウンド取得
+                const futureRemaining = fullFileNames.slice(secondaryEnd);
+                const pastRemaining = fullFileNames.slice(0, centerIndex).reverse();
+                backgroundFetchQueue = [...futureRemaining, ...pastRemaining];
+                addDebugLog(`🔄 バックグラウンド取得キュー作成: ${backgroundFetchQueue.length}枚（未来→過去）`, 'info');
+                startBackgroundFetch();
+                
+                const elapsedTime = Date.now() - startTime;
+                addDebugLog(`✓ 優先取得完了: ${elapsedTime}ms`, 'success');
+                updateCacheInfo();
+
+            } catch (error) {
+                addDebugLog(`✗ エラー: ${error.message}`, 'error');
+                console.error('Error loading tide images:', error);
+                showError(`画像リスト読み込みエラー: ${error.message}`);
+            }
+        }
+
+        // ============ 新規：バッチ取得ロジック ============
+
+        /**
+         * ★ 新規：Worker で 30並列で全画像を一度に取得
+         * 入力: 432個のファイル名配列
+         * 出力: Blob URL をキャッシュに保存
+         */
+        async function fetchTideImageBatch(fileNames) {
+            if (!fileNames || fileNames.length === 0) {
+                throw new Error('ファイル名配列が空です');
+            }
+
+            try {
+                const REQUEST_CHUNK_SIZE = 15;
+                const totalChunks = Math.ceil(fileNames.length / REQUEST_CHUNK_SIZE);
+                let cachedCount = 0;
+                let failedCount = 0;
+
+                for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+                    const start = chunkIndex * REQUEST_CHUNK_SIZE;
+                    const end = Math.min(start + REQUEST_CHUNK_SIZE, fileNames.length);
+                    const chunkFileNames = fileNames.slice(start, end);
+
+                    addDebugLog(`📡 Worker の /api/tideFetchBatch を呼び出し... (${chunkIndex + 1}/${totalChunks}, ${chunkFileNames.length}件)`, 'info');
+
+                    const workerPayload = {
+                        fileNames: chunkFileNames
+                    };
+
+                    const workerResponse = await fetch(`${WORKER_BASE_URL}/api/tideFetchBatch`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Auth-Token': WORKERS_AUTH_TOKEN
+                        },
+                        body: JSON.stringify(workerPayload)
+                    });
+
+                    if (!workerResponse.ok) {
+                        throw new Error(`Worker HTTP ${workerResponse.status} (chunk ${chunkIndex + 1}/${totalChunks})`);
+                    }
+
+                    const workerData = await workerResponse.json();
+
+                    if (!workerData.ok || !workerData.images) {
+                        throw new Error(workerData.error || `Failed to fetch images from Worker (chunk ${chunkIndex + 1}/${totalChunks})`);
+                    }
+
+                    // ★ 返されたBase64をBlobURLに変換してキャッシュに保存
+                    addDebugLog(`💾 チャンク ${chunkIndex + 1}/${totalChunks}: ${workerData.images.length}個をキャッシュに保存中...`, 'info');
+
+                    workerData.images.forEach(img => {
+                        if (img.fileName && img.base64) {
+                            try {
+                                // Base64 → Blob → Blob URL に変換
+                                const binaryString = atob(img.base64);
+                                const bytes = new Uint8Array(binaryString.length);
+                                for (let i = 0; i < binaryString.length; i++) {
+                                    bytes[i] = binaryString.charCodeAt(i);
+                                }
+                                const blob = new Blob([bytes], { type: img.mimeType || 'image/png' });
+                                const blobUrl = URL.createObjectURL(blob);
+
+                                imageBlobCache[img.fileName] = blobUrl;
+                                fetchingStatusCache[img.fileName] = 'done';
+                                cachedCount++;
+                            } catch (error) {
+                                addDebugLog(`✗ ${img.fileName} の変換失敗: ${error.message}`, 'error');
+                                fetchingStatusCache[img.fileName] = 'failed';
+                                failedCount++;
+                            }
+                        }
+                    });
+
+                    // Worker 側で取得失敗した件数を加算
+                    if (workerData.failed > 0) {
+                        failedCount += workerData.failed;
+                        addDebugLog(`⚠️  チャンク ${chunkIndex + 1}/${totalChunks}: ${workerData.failed}個の画像取得に失敗`, 'warning');
+                    }
+                }
+
+                addDebugLog(`✓ ${cachedCount}個の画像をキャッシュに保存完了`, 'success');
+
+                if (failedCount > 0) {
+                    addDebugLog(`⚠️  合計 ${failedCount}個の画像で失敗が発生`, 'warning');
+                }
+
+            } catch (error) {
+                addDebugLog(`✗ バッチ取得エラー: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+        // 残り画像を未来→過去の順でバックグラウンド取得
+        async function startBackgroundFetch() {
+            if (isBackgroundFetching || backgroundFetchQueue.length === 0) {
+                return;
+            }
+
+            isBackgroundFetching = true;
+            addDebugLog(`🔄 バックグラウンド取得開始: ${backgroundFetchQueue.length}枚`, 'info');
+
+            try {
+                const BG_BATCH_SIZE = 30;
+                while (backgroundFetchQueue.length > 0) {
+                    const batch = [];
+
+                    while (backgroundFetchQueue.length > 0 && batch.length < BG_BATCH_SIZE) {
+                        const fileName = backgroundFetchQueue.shift();
+
+                        // 既にキャッシュ済みならスキップ
+                        if (imageBlobCache[fileName]) {
+                            continue;
+                        }
+                        batch.push(fileName);
+                    }
+
+                    if (batch.length === 0) {
+                        continue;
+                    }
+
+                    try {
+                        await fetchTideImageBatch(batch);
+                    } catch (error) {
+                        addDebugLog(`⚠️ バックグラウンド取得バッチ失敗（継続）: ${error.message}`, 'warning');
+                        // バッチ失敗しても継続
+                    }
+                }
+
+                addDebugLog('✓ バックグラウンド取得完了', 'success');
+            } catch (error) {
+                addDebugLog(`✗ バックグラウンド取得エラー: ${error.message}`, 'error');
+            } finally {
+                isBackgroundFetching = false;
+            }
+        }
+
+        // ============ 画像表示 ============
+        async function updateImage() {
+            if (tideImages.length === 0) {
+                showError('画像がありません');
+                return;
+            }
+
+            const fileName = tideImages[currentImageIndex];
+            updateSliderValue();
+            addDebugLog(`📸 画像を更新: ${fileName} (index: ${currentImageIndex})`, 'info');
+
+            try {
+                showLoading();
+
+                // ★ 修正：キャッシュをチェック
+                if (imageBlobCache[fileName]) {
+                    addDebugLog(`✓ キャッシュから画像を取得`, 'success');
+                    tideImage.src = imageBlobCache[fileName];
+                    tideImage.style.display = 'block';
+                    loadingMessage.style.display = 'none';
+                    showImageInfo(fileName);
+                    return;
+                }
+
+                // キャッシュにない場合は、現在位置から先1時間分（6枚）を優先取得
+                addDebugLog(`⏳ キャッシュ未取得のため、先1時間分を優先取得します...`, 'info');
+                const startTime = Date.now();
+                const PRIORITY_FETCH_COUNT = 6;
+                const priorityFileNames = tideImages
+                    .slice(currentImageIndex, Math.min(currentImageIndex + PRIORITY_FETCH_COUNT, tideImages.length))
+                    .filter(name => !imageBlobCache[name]);
+
+                if (priorityFileNames.length > 0) {
+                    await fetchTideImageBatch(priorityFileNames);
+                }
+                
+                const elapsedTime = Date.now() - startTime;
+                addDebugLog(`⏱️ 取得時間: ${elapsedTime}ms`, 'info');
+
+                // 取得結果をチェック
+                if (imageBlobCache[fileName]) {
+                    tideImage.src = imageBlobCache[fileName];
+                    tideImage.style.display = 'block';
+                    loadingMessage.style.display = 'none';
+                    showImageInfo(fileName);
+                } else {
+                    // 最終フォールバック: 単体取得を一度だけ試す
+                    addDebugLog(`⚠️ 優先取得で未取得のため単体取得を試行します: ${fileName}`, 'warning');
+                    await fetchSingleImage(fileName);
+
+                    if (imageBlobCache[fileName]) {
+                        tideImage.src = imageBlobCache[fileName];
+                        tideImage.style.display = 'block';
+                        loadingMessage.style.display = 'none';
+                        showImageInfo(fileName);
+                    } else {
+                        throw new Error('取得に失敗しました');
+                    }
+                }
+
+            } catch (error) {
+                addDebugLog(`✗ エラー: ${error.message}`, 'error');
+                console.error('Error updating image:', error);
+                showError(`画像表示エラー: ${error.message}`);
+            }
+        }
+
+        // ============ ★旧：優先取得と背景取得（バッチ取得で不要） ============
+        /*
+        function generatePriorityAndBackgroundLists(fileNames, centerIndex) {
+            const imagesPerHour = 60 / IMAGE_INTERVAL; // 10分間隔 → 6画像/時間
+            const priorityRange = PRIORITY_RANGE_HOURS * imagesPerHour; // ±12時間分の画像数
+            
+            const startIdx = Math.max(0, centerIndex - Math.floor(priorityRange / 2));
+            const endIdx = Math.min(fileNames.length - 1, centerIndex + Math.floor(priorityRange / 2));
+            
+            const priorityList = fileNames.slice(startIdx, endIdx + 1);
+            const backgroundList = [
+                ...fileNames.slice(0, startIdx),
+                ...fileNames.slice(endIdx + 1)
+            ];
+            
+            return { priorityList, backgroundList };
+        }
+
+        async function fetchImagesConcurrently(fileNames, maxConcurrent) {
+            const results = [];
+            let completed = 0;
+            
+            for (let i = 0; i < fileNames.length; i += maxConcurrent) {
+                const batch = fileNames.slice(i, i + maxConcurrent);
+                
+                try {
+                    await Promise.all(batch.map(fileName => 
+                        fetchSingleImage(fileName)
+                            .then(() => {
+                                completed++;
+                                const progress = Math.round((completed / fileNames.length) * 100);
+                                addDebugLog(`⏳ 優先取得進捗: ${progress}% (${completed}/${fileNames.length})`, 'info');
+                            })
+                            .catch(err => {
+                                addDebugLog(`✗ ${fileName} の取得失敗: ${err.message}`, 'warning');
+                                fetchingStatusCache[fileName] = 'failed';
+                            })
+                    ));
+                } catch (error) {
+                    addDebugLog(`✗ バッチ取得エラー: ${error.message}`, 'error');
+                }
+            }
+        }
+        */
+
+        // ============ フォールバック：単一画像取得 ============
+        async function fetchSingleImage(fileName) {
+            // キャッシュをチェック
+            if (imageBlobCache[fileName]) {
+                addDebugLog(`✓ キャッシュ済み: ${fileName}`, 'info');
+                return;
+            }
+
+            // 取得中フラグをチェック
+            if (fetchingStatusCache[fileName] === 'fetching') {
+                return; // 既に取得中
+            }
+
+            fetchingStatusCache[fileName] = 'fetching';
+
+            try {
+                // ★ 修正：ファイル名から日付を抽出 (YYYYMMDDHHmm.png → YYYY-MM-DD)
+                const year = fileName.substring(0, 4);
+                const month = fileName.substring(4, 6);
+                const day = fileName.substring(6, 8);
+                const dateStr = `${year}-${month}-${day}`;
+
+                addDebugLog(`📅 Google Drive から画像リストを取得: ${dateStr}`, 'info');
+
+                // ★ Worker 経由で GAS に getTideImagesFromDrive リクエスト
+                const workerPayload = {
+                    action: 'getTideImagesFromDrive',
+                    date: dateStr
+                };
+
+                const workerResponse = await fetch(`${WORKER_BASE_URL}/api/getTideImagesFromDrive`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Auth-Token': WORKERS_AUTH_TOKEN
+                    },
+                    body: JSON.stringify(workerPayload)
+                });
+
+                if (!workerResponse.ok) {
+                    throw new Error(`Worker HTTP ${workerResponse.status}`);
+                }
+
+                const workerData = await workerResponse.json();
+
+                if (!workerData.ok || !workerData.images) {
+                    throw new Error(workerData.error || 'Failed to get image list from Drive');
+                }
+
+                // ★ ファイル名に一致する画像を検索
+                const imageInfo = workerData.images.find(img => img.fileName === fileName);
+                if (!imageInfo || !imageInfo.sharingUrl) {
+                    throw new Error(`Image not found in Drive: ${fileName}`);
+                }
+
+                addDebugLog(`🔗 sharingUrl を取得: ${imageInfo.sharingUrl.substring(0, 50)}...`, 'success');
+
+                // ★ sharingUrl から直接画像をフェッチ
+                const imageRes = await fetch(imageInfo.sharingUrl);
+                if (!imageRes.ok) {
+                    throw new Error(`Image download failed: HTTP ${imageRes.status}`);
+                }
+
+                const imageBlob = await imageRes.blob();
+                const blobUrl = URL.createObjectURL(imageBlob);
+
+                // ★ キャッシュに保存
+                imageBlobCache[fileName] = blobUrl;
+                fetchingStatusCache[fileName] = 'done';
+                addDebugLog(`✓ 取得完了: ${fileName} (${imageBlob.size} bytes)`, 'success');
+
+            } catch (error) {
+                fetchingStatusCache[fileName] = 'failed';
+                addDebugLog(`✗ 取得失敗: ${fileName} - ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+        // ★ 修正：進捗表示はバッチ取得完了で不要（全て一度に取得）
+        function updateProgressPanel() {
+            // バッチ取得は全て一度に取得されるため、進捗表示は不要
+            // 従来の優先/背景取得用の関数のため、ここでは無視
+        }
+
+        // ============ UI更新 ============
+        function updateSliderRange() {
+            imageSlider.max = Math.max(0, tideImages.length - 1);
+        }
+
+        function updateSliderValue() {
+            sliderValue.textContent = `${currentImageIndex + 1} / ${tideImages.length}`;
+        }
+
+        function updateDateRangeInfo() {
+            if (!selectedDate) return;
+
+            const baseTime = new Date(selectedDate);
+            baseTime.setHours(BASE_HOUR, 0, 0, 0);
+
+            const startTime = new Date(baseTime.getTime() - BEFORE_HOURS * 60 * 60 * 1000);
+            const endTime = new Date(baseTime.getTime() + AFTER_HOURS * 60 * 60 * 1000);
+
+            dateRangeInfo.innerHTML = `
+                <strong>表示範囲:</strong> ${formatDateTime(startTime)} ～ ${formatDateTime(endTime)}
+                <br><strong>画像数:</strong> ${tideImages.length || '計算中...'}枚 (10分間隔)
+            `;
+        }
+
+        function showImageInfo(fileName) {
+            // ファイル名からタイムスタンプを抽出
+            const year = fileName.substring(0, 4);
+            const month = fileName.substring(4, 6);
+            const day = fileName.substring(6, 8);
+            const hours = fileName.substring(8, 10);
+            const minutes = fileName.substring(10, 12);
+
+            const timestamp = `${year}-${month}-${day} ${hours}:${minutes}`;
+
+            // 既存の画像情報を削除
+            const oldInfo = document.querySelector('.image-info');
+            if (oldInfo) oldInfo.remove();
+
+            // 新しい画像情報を追加
+            const imageDisplay = document.querySelector('.image-display');
+            const info = document.createElement('div');
+            info.className = 'image-info';
+            info.innerHTML = `
+                <span class="image-timestamp">📷 ${timestamp}</span>
+                <span class="image-count">${currentImageIndex + 1} / ${tideImages.length}</span>
+            `;
+            imageDisplay.appendChild(info);
+        }
+
+        function showLoading() {
+            tideImage.style.display = 'none';
+            loadingMessage.style.display = 'flex';
+            loadingMessage.classList.remove('error');
+            loadingMessage.innerHTML = `
+                <div>
+                    <div class="loader"></div>
+                    <p style="margin-top: 10px;">画像を読み込み中...</p>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            tideImage.style.display = 'none';
+            loadingMessage.style.display = 'flex';
+            loadingMessage.classList.add('error');
+            loadingMessage.innerHTML = `<div class="error">⚠️ ${message}</div>`;
+        }
+
+        // ============ グローバル関数 ============
+        function clearCache() {
+            clearImageCache();
+            alert('キャッシュをクリアしました');
+        }
+
+        // ============ デバッグ関数 ============
+        function addDebugLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString('ja-JP');
+            const logEntry = {
+                timestamp: timestamp,
+                message: message,
+                type: type
+            };
+
+            debugLogs.push(logEntry);
+
+            // コンソールにも出力
+            const consoleMethod = type === 'error' ? 'error' : type === 'warning' ? 'warn' : type === 'success' ? 'log' : 'log';
+            console[consoleMethod](`[${timestamp}] ${message}`);
+
+            // UI に追加
+            const logElement = document.createElement('div');
+            logElement.className = `debug-log ${type}`;
+            logElement.textContent = `[${timestamp}] ${message}`;
+            debugLogsContainer.appendChild(logElement);
+
+            // 自動スクロール
+            debugLogsContainer.scrollTop = debugLogsContainer.scrollHeight;
+
+            // ログが多すぎる場合は古いものを削除
+            while (debugLogs.length > 100) {
+                debugLogs.shift();
+                debugLogsContainer.removeChild(debugLogsContainer.firstChild);
+            }
+        }
+
+        function clearDebugLogs() {
+            debugLogs = [];
+            debugLogsContainer.innerHTML = '';
+            addDebugLog('📝 デバッグログをクリアしました', 'info');
+        }
+
+        function toggleDebugDetails() {
+            debugMode = !debugMode;
+            addDebugLog(`🔍 デバッグ詳細: ${debugMode ? 'ON' : 'OFF'}`, 'info');
+        }
+
+        // キーボードショートカット
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') {
+                addDebugLog('⌨️ キーボード: ← (前の画像)', 'info');
+                btnPrev.click();
+            } else if (e.key === 'ArrowRight') {
+                addDebugLog('⌨️ キーボード: → (次の画像)', 'info');
+                btnNext.click();
+            }
+        });
+    </script>
 </body>
 </html>
