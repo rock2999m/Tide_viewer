@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Tide Viewer icon">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e3a8a"/>
+      <stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#g)"/>
+  <path d="M52 326c48 0 48-28 96-28s48 28 96 28 48-28 96-28 48 28 96 28" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round"/>
+  <circle cx="388" cy="132" r="48" fill="#f8fafc" opacity="0.95"/>
+</svg>
