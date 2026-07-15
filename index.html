@@ -694,8 +694,46 @@
             }
         }
 
+        function isBlobUrl(url) {
+            return typeof url === 'string' && url.startsWith('blob:');
+        }
+
+        function releaseImageMemoryCache() {
+            Object.values(imageBlobCache).forEach((url) => {
+                if (isBlobUrl(url)) {
+                    URL.revokeObjectURL(url);
+                }
+            });
+            imageBlobCache = {};
+        }
+
         function buildBinaryImageUrl(fileName) {
             return `${WORKER_BASE_URL}${BINARY_IMAGE_ENDPOINT}?fileName=${encodeURIComponent(fileName)}&token=${encodeURIComponent(WORKERS_AUTH_TOKEN)}`;
+        }
+
+        async function getImageFromSwCache(fileName) {
+            if (!('caches' in window)) {
+                return null;
+            }
+
+            const imageUrl = buildBinaryImageUrl(fileName);
+            const cachedResponse = await caches.match(imageUrl);
+            if (!cachedResponse || !cachedResponse.ok) {
+                return null;
+            }
+
+            const blob = await cachedResponse.blob();
+            return URL.createObjectURL(blob);
+        }
+
+        async function fetchImageFromNetwork(fileName) {
+            const imageUrl = buildBinaryImageUrl(fileName);
+            const imageRes = await fetchWithTimeout(imageUrl, {}, FETCH_TIMEOUT_MS);
+            if (!imageRes.ok) {
+                throw new Error(`HTTP ${imageRes.status}`);
+            }
+            const blob = await imageRes.blob();
+            return URL.createObjectURL(blob);
         }
 
         async function preloadImageUrl(url, timeoutMs = FETCH_TIMEOUT_MS) {
@@ -726,7 +764,7 @@
             addDebugLog(`📅 日付が変更されました: ${formatDate(selectedDate)}`, 'info');
             currentImageIndex = 0;
             clearImageCache(selectedDate); // 日付変更時はキャッシュクリア
-            imageBlobCache = {}; // ★ イメージブロブキャッシュもクリア
+            releaseImageMemoryCache(); // ★ イメージブロブキャッシュもクリア
             fetchingStatusCache = {}; // ★ 取得ステータスもクリア
             backgroundFetchQueue = []; // ★ バックグラウンドキューもクリア
             addDebugLog('🗑️ キャッシュをクリアしました', 'warning');
@@ -1016,11 +1054,19 @@
                         }
 
                         fetchingStatusCache[fileName] = 'fetching';
-                        const imageUrl = buildBinaryImageUrl(fileName);
 
                         try {
-                            await preloadImageUrl(imageUrl, FETCH_TIMEOUT_MS);
-                            imageBlobCache[fileName] = imageUrl;
+                            // 取得順序: memory -> SW cache -> network fetch
+                            const swCachedBlobUrl = await getImageFromSwCache(fileName);
+                            if (swCachedBlobUrl) {
+                                imageBlobCache[fileName] = swCachedBlobUrl;
+                                fetchingStatusCache[fileName] = 'done';
+                                cachedCount++;
+                                return;
+                            }
+
+                            const networkBlobUrl = await fetchImageFromNetwork(fileName);
+                            imageBlobCache[fileName] = networkBlobUrl;
                             fetchingStatusCache[fileName] = 'done';
                             cachedCount++;
                         } catch (error) {
@@ -1330,6 +1376,9 @@
 
         // ============ グローバル関数 ============
         function clearCache() {
+            releaseImageMemoryCache();
+            fetchingStatusCache = {};
+            backgroundFetchQueue = [];
             clearImageCache();
             alert('キャッシュをクリアしました');
         }
