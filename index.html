@@ -311,6 +311,21 @@
             cursor: not-allowed;
         }
 
+        .btn-cache-clear {
+            margin-top: 10px;
+            width: 100%;
+            background: #334155;
+            color: #f8fafc;
+            font-size: 13px;
+            min-height: 40px;
+        }
+
+        .btn-cache-clear:hover {
+            background: #1f2937;
+            transform: none;
+            box-shadow: none;
+        }
+
         /* ========== キャッシュ情報 ========== */
         .cache-info {
             margin-top: 20px;
@@ -569,6 +584,10 @@
                     <span style="cursor: pointer; user-select: none;" onclick="clearCache()">✕ キャッシュクリア</span>
                 </div>
 
+                <button class="btn-cache-clear" id="btnCacheClear" onclick="clearCache()">
+                    🧹 キャッシュをクリア
+                </button>
+
                 <!-- ★ 新規：取得進捗パネル -->
                 <div style="margin-top: 15px; padding: 12px; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 6px; display: none;" id="progressPanel">
                     <div style="margin-bottom: 8px; font-size: 13px; color: #1e40af; font-weight: 600;">
@@ -598,7 +617,7 @@
             </div>
 
             <div class="app-footer">
-                Version: v1.0.0
+                Version: v1.2.0
             </div>
         </div>
     </div>
@@ -615,6 +634,7 @@
         const IMAGE_INTERVAL = 10; // 分
         const FETCH_TIMEOUT_MS = 15000;
         const BINARY_IMAGE_ENDPOINT = '/api/tideImageBinary';
+        const MIN_VALID_IMAGE_BYTES = 2048;
 
         // ============ デバッグ用グローバル変数 ============
         let debugMode = true;
@@ -711,6 +731,57 @@
             return `${WORKER_BASE_URL}${BINARY_IMAGE_ENDPOINT}?fileName=${encodeURIComponent(fileName)}&token=${encodeURIComponent(WORKERS_AUTH_TOKEN)}`;
         }
 
+        async function canDecodeImageBlob(blob) {
+            // createImageBitmap is fast and available in modern browsers.
+            if ('createImageBitmap' in window) {
+                try {
+                    const bitmap = await createImageBitmap(blob);
+                    bitmap.close();
+                    return true;
+                } catch (error) {
+                    return false;
+                }
+            }
+
+            return new Promise((resolve) => {
+                const img = new Image();
+                const blobUrl = URL.createObjectURL(blob);
+
+                img.onload = () => {
+                    URL.revokeObjectURL(blobUrl);
+                    resolve(true);
+                };
+
+                img.onerror = () => {
+                    URL.revokeObjectURL(blobUrl);
+                    resolve(false);
+                };
+
+                img.src = blobUrl;
+            });
+        }
+
+        async function validateImageBlob(blob, fileName) {
+            if (!blob) {
+                return { ok: false, reason: `${fileName}: empty blob` };
+            }
+
+            if (!blob.type || !blob.type.startsWith('image/')) {
+                return { ok: false, reason: `${fileName}: invalid content type (${blob.type || 'unknown'})` };
+            }
+
+            if (blob.size < MIN_VALID_IMAGE_BYTES) {
+                return { ok: false, reason: `${fileName}: blob too small (${blob.size} bytes)` };
+            }
+
+            const decodable = await canDecodeImageBlob(blob);
+            if (!decodable) {
+                return { ok: false, reason: `${fileName}: image decode failed` };
+            }
+
+            return { ok: true };
+        }
+
         async function getImageFromSwCache(fileName) {
             if (!('caches' in window)) {
                 return null;
@@ -723,6 +794,13 @@
             }
 
             const blob = await cachedResponse.blob();
+            const validation = await validateImageBlob(blob, fileName);
+            if (!validation.ok) {
+                await caches.delete(imageUrl);
+                addDebugLog(`⚠️ SWキャッシュ不正データを破棄: ${validation.reason}`, 'warning');
+                return null;
+            }
+
             return URL.createObjectURL(blob);
         }
 
@@ -732,7 +810,13 @@
             if (!imageRes.ok) {
                 throw new Error(`HTTP ${imageRes.status}`);
             }
+
             const blob = await imageRes.blob();
+            const validation = await validateImageBlob(blob, fileName);
+            if (!validation.ok) {
+                throw new Error(validation.reason);
+            }
+
             return URL.createObjectURL(blob);
         }
 
@@ -1374,12 +1458,33 @@
             loadingMessage.innerHTML = `<div class="error">⚠️ ${message}</div>`;
         }
 
+        async function clearServiceWorkerCaches() {
+            if (!('caches' in window)) {
+                return 0;
+            }
+
+            const cacheNames = await caches.keys();
+            const targets = cacheNames.filter((name) => name.startsWith('tide-chart-viewer-github'));
+
+            await Promise.all(targets.map((name) => caches.delete(name)));
+            return targets.length;
+        }
+
         // ============ グローバル関数 ============
-        function clearCache() {
+        async function clearCache() {
             releaseImageMemoryCache();
             fetchingStatusCache = {};
             backgroundFetchQueue = [];
             clearImageCache();
+
+            let deletedCount = 0;
+            try {
+                deletedCount = await clearServiceWorkerCaches();
+            } catch (error) {
+                addDebugLog(`⚠️ SWキャッシュ削除に失敗: ${error.message}`, 'warning');
+            }
+
+            addDebugLog(`🧹 キャッシュクリア完了 (SW: ${deletedCount}件)`, 'success');
             alert('キャッシュをクリアしました');
         }
 
