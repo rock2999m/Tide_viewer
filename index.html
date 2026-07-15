@@ -614,6 +614,7 @@
         const TOTAL_HOURS = BEFORE_HOURS + AFTER_HOURS;
         const IMAGE_INTERVAL = 10; // 分
         const FETCH_TIMEOUT_MS = 15000;
+        const BINARY_IMAGE_ENDPOINT = '/api/tideImageBinary';
 
         // ============ デバッグ用グローバル変数 ============
         let debugMode = true;
@@ -691,6 +692,32 @@
             } finally {
                 clearTimeout(timer);
             }
+        }
+
+        function buildBinaryImageUrl(fileName) {
+            return `${WORKER_BASE_URL}${BINARY_IMAGE_ENDPOINT}?fileName=${encodeURIComponent(fileName)}&token=${encodeURIComponent(WORKERS_AUTH_TOKEN)}`;
+        }
+
+        async function preloadImageUrl(url, timeoutMs = FETCH_TIMEOUT_MS) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const timer = setTimeout(() => {
+                    img.src = '';
+                    reject(new Error('Image preload timeout'));
+                }, timeoutMs);
+
+                img.onload = () => {
+                    clearTimeout(timer);
+                    resolve(true);
+                };
+
+                img.onerror = () => {
+                    clearTimeout(timer);
+                    reject(new Error('Image preload failed'));
+                };
+
+                img.src = url;
+            });
         }
 
         // ============ イベントリスナー ============
@@ -915,12 +942,14 @@
                 imageSlider.value = centerIndex;
                 addDebugLog(`🎚️ スライダーをリセット (${centerIndex} / ${fullFileNames.length})`, 'info');
 
-                // 取得フェーズ1: 初期位置から1時間分（6枚）を最優先
+                // 取得フェーズ1: 初期位置の前後を含む3枚（前1・現在・次1）を最優先
                 const startTime = Date.now();
-                const priorityCount = 6;
+                const priorityCount = 3;
                 const secondaryCount = 30;
 
-                const priorityFileNames = fullFileNames.slice(centerIndex, Math.min(centerIndex + priorityCount, fullFileNames.length));
+                const priorityStart = Math.max(0, centerIndex - 1);
+                const priorityEnd = Math.min(centerIndex + 2, fullFileNames.length);
+                const priorityFileNames = fullFileNames.slice(priorityStart, priorityEnd);
                 addDebugLog(`⚡ 優先取得フェーズ1: ${priorityFileNames.length}枚`, 'info');
                 await fetchTideImageBatch(priorityFileNames);
 
@@ -956,9 +985,9 @@
         // ============ 新規：バッチ取得ロジック ============
 
         /**
-         * ★ 新規：Worker で 30並列で全画像を一度に取得
-         * 入力: 432個のファイル名配列
-         * 出力: Blob URL をキャッシュに保存
+         * ★ 修正：Worker のバイナリ画像APIを使って画像を先読み
+         * 入力: ファイル名配列
+         * 出力: URL をキャッシュに保存
          */
         async function fetchTideImageBatch(fileNames) {
             if (!fileNames || fileNames.length === 0) {
@@ -966,7 +995,7 @@
             }
 
             try {
-                const REQUEST_CHUNK_SIZE = 15;
+                const REQUEST_CHUNK_SIZE = 8;
                 const totalChunks = Math.ceil(fileNames.length / REQUEST_CHUNK_SIZE);
                 let cachedCount = 0;
                 let failedCount = 0;
@@ -976,65 +1005,34 @@
                     const end = Math.min(start + REQUEST_CHUNK_SIZE, fileNames.length);
                     const chunkFileNames = fileNames.slice(start, end);
 
-                    addDebugLog(`📡 Worker の /api/tideFetchBatch を呼び出し... (${chunkIndex + 1}/${totalChunks}, ${chunkFileNames.length}件)`, 'info');
+                    addDebugLog(`📡 バイナリ画像を先読み... (${chunkIndex + 1}/${totalChunks}, ${chunkFileNames.length}件)`, 'info');
 
-                    const workerPayload = {
-                        fileNames: chunkFileNames
-                    };
+                    const promises = chunkFileNames.map(async (fileName) => {
+                        if (imageBlobCache[fileName]) {
+                            return;
+                        }
+                        if (fetchingStatusCache[fileName] === 'fetching') {
+                            return;
+                        }
 
-                    const workerResponse = await fetchWithTimeout(`${WORKER_BASE_URL}/api/tideFetchBatch`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Auth-Token': WORKERS_AUTH_TOKEN
-                        },
-                        body: JSON.stringify(workerPayload)
-                    }, FETCH_TIMEOUT_MS);
+                        fetchingStatusCache[fileName] = 'fetching';
+                        const imageUrl = buildBinaryImageUrl(fileName);
 
-                    if (!workerResponse.ok) {
-                        throw new Error(`Worker HTTP ${workerResponse.status} (chunk ${chunkIndex + 1}/${totalChunks})`);
-                    }
-
-                    const workerData = await workerResponse.json();
-
-                    if (!workerData.ok || !workerData.images) {
-                        throw new Error(workerData.error || `Failed to fetch images from Worker (chunk ${chunkIndex + 1}/${totalChunks})`);
-                    }
-
-                    // ★ 返されたBase64をBlobURLに変換してキャッシュに保存
-                    addDebugLog(`💾 チャンク ${chunkIndex + 1}/${totalChunks}: ${workerData.images.length}個をキャッシュに保存中...`, 'info');
-
-                    workerData.images.forEach(img => {
-                        if (img.fileName && img.base64) {
-                            try {
-                                // Base64 → Blob → Blob URL に変換
-                                const binaryString = atob(img.base64);
-                                const bytes = new Uint8Array(binaryString.length);
-                                for (let i = 0; i < binaryString.length; i++) {
-                                    bytes[i] = binaryString.charCodeAt(i);
-                                }
-                                const blob = new Blob([bytes], { type: img.mimeType || 'image/png' });
-                                const blobUrl = URL.createObjectURL(blob);
-
-                                imageBlobCache[img.fileName] = blobUrl;
-                                fetchingStatusCache[img.fileName] = 'done';
-                                cachedCount++;
-                            } catch (error) {
-                                addDebugLog(`✗ ${img.fileName} の変換失敗: ${error.message}`, 'error');
-                                fetchingStatusCache[img.fileName] = 'failed';
-                                failedCount++;
-                            }
+                        try {
+                            await preloadImageUrl(imageUrl, FETCH_TIMEOUT_MS);
+                            imageBlobCache[fileName] = imageUrl;
+                            fetchingStatusCache[fileName] = 'done';
+                            cachedCount++;
+                        } catch (error) {
+                            fetchingStatusCache[fileName] = 'failed';
+                            failedCount++;
                         }
                     });
 
-                    // Worker 側で取得失敗した件数を加算
-                    if (workerData.failed > 0) {
-                        failedCount += workerData.failed;
-                        addDebugLog(`⚠️  チャンク ${chunkIndex + 1}/${totalChunks}: ${workerData.failed}個の画像取得に失敗`, 'warning');
-                    }
+                    await Promise.all(promises);
                 }
 
-                addDebugLog(`✓ ${cachedCount}個の画像をキャッシュに保存完了`, 'success');
+                addDebugLog(`✓ ${cachedCount}個の画像を先読み完了`, 'success');
 
                 if (failedCount > 0) {
                     addDebugLog(`⚠️  合計 ${failedCount}個の画像で失敗が発生`, 'warning');
@@ -1259,80 +1257,7 @@
 
         // ============ フォールバック：単一画像取得 ============
         async function fetchSingleImage(fileName) {
-            // キャッシュをチェック
-            if (imageBlobCache[fileName]) {
-                addDebugLog(`✓ キャッシュ済み: ${fileName}`, 'info');
-                return;
-            }
-
-            // 取得中フラグをチェック
-            if (fetchingStatusCache[fileName] === 'fetching') {
-                return; // 既に取得中
-            }
-
-            fetchingStatusCache[fileName] = 'fetching';
-
-            try {
-                // ★ 修正：ファイル名から日付を抽出 (YYYYMMDDHHmm.png → YYYY-MM-DD)
-                const year = fileName.substring(0, 4);
-                const month = fileName.substring(4, 6);
-                const day = fileName.substring(6, 8);
-                const dateStr = `${year}-${month}-${day}`;
-
-                addDebugLog(`📅 Google Drive から画像リストを取得: ${dateStr}`, 'info');
-
-                // ★ Worker 経由で GAS に getTideImagesFromDrive リクエスト
-                const workerPayload = {
-                    action: 'getTideImagesFromDrive',
-                    date: dateStr
-                };
-
-                const workerResponse = await fetchWithTimeout(`${WORKER_BASE_URL}/api/getTideImagesFromDrive`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Auth-Token': WORKERS_AUTH_TOKEN
-                    },
-                    body: JSON.stringify(workerPayload)
-                }, FETCH_TIMEOUT_MS);
-
-                if (!workerResponse.ok) {
-                    throw new Error(`Worker HTTP ${workerResponse.status}`);
-                }
-
-                const workerData = await workerResponse.json();
-
-                if (!workerData.ok || !workerData.images) {
-                    throw new Error(workerData.error || 'Failed to get image list from Drive');
-                }
-
-                // ★ ファイル名に一致する画像を検索
-                const imageInfo = workerData.images.find(img => img.fileName === fileName);
-                if (!imageInfo || !imageInfo.sharingUrl) {
-                    throw new Error(`Image not found in Drive: ${fileName}`);
-                }
-
-                addDebugLog(`🔗 sharingUrl を取得: ${imageInfo.sharingUrl.substring(0, 50)}...`, 'success');
-
-                // ★ sharingUrl から直接画像をフェッチ
-                const imageRes = await fetchWithTimeout(imageInfo.sharingUrl, {}, FETCH_TIMEOUT_MS);
-                if (!imageRes.ok) {
-                    throw new Error(`Image download failed: HTTP ${imageRes.status}`);
-                }
-
-                const imageBlob = await imageRes.blob();
-                const blobUrl = URL.createObjectURL(imageBlob);
-
-                // ★ キャッシュに保存
-                imageBlobCache[fileName] = blobUrl;
-                fetchingStatusCache[fileName] = 'done';
-                addDebugLog(`✓ 取得完了: ${fileName} (${imageBlob.size} bytes)`, 'success');
-
-            } catch (error) {
-                fetchingStatusCache[fileName] = 'failed';
-                addDebugLog(`✗ 取得失敗: ${fileName} - ${error.message}`, 'error');
-                throw error;
-            }
+            return fetchTideImageBatch([fileName]);
         }
 
         // ============ UI更新 ============
