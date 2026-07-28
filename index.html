@@ -617,7 +617,7 @@
             </div>
 
             <div class="app-footer">
-                Version: v1.2.0
+                Version: v2.0.0
             </div>
         </div>
     </div>
@@ -635,6 +635,7 @@
         const FETCH_TIMEOUT_MS = 15000;
         const BINARY_IMAGE_ENDPOINT = '/api/tideImageBinary';
         const MIN_VALID_IMAGE_BYTES = 2048;
+        const R2_IMAGE_PREFIX = 'mirc/akashi/';
 
         // ============ デバッグ用グローバル変数 ============
         let debugMode = true;
@@ -728,7 +729,7 @@
         }
 
         function buildBinaryImageUrl(fileName) {
-            return `${WORKER_BASE_URL}${BINARY_IMAGE_ENDPOINT}?fileName=${encodeURIComponent(fileName)}&token=${encodeURIComponent(WORKERS_AUTH_TOKEN)}`;
+            return `${WORKER_BASE_URL}${BINARY_IMAGE_ENDPOINT}?key=${encodeURIComponent(fileName)}&token=${encodeURIComponent(WORKERS_AUTH_TOKEN)}`;
         }
 
         async function canDecodeImageBlob(blob) {
@@ -808,7 +809,9 @@
             const imageUrl = buildBinaryImageUrl(fileName);
             const imageRes = await fetchWithTimeout(imageUrl, {}, FETCH_TIMEOUT_MS);
             if (!imageRes.ok) {
-                throw new Error(`HTTP ${imageRes.status}`);
+                const error = new Error(`HTTP ${imageRes.status}`);
+                error.status = imageRes.status;
+                throw error;
             }
 
             const blob = await imageRes.blob();
@@ -818,6 +821,29 @@
             }
 
             return URL.createObjectURL(blob);
+        }
+
+        function isImageNotFoundError(error) {
+            if (!error) {
+                return false;
+            }
+            if (error.status === 404) {
+                return true;
+            }
+            const message = String(error.message || '');
+            return message.includes('HTTP 404') || message.includes('not found');
+        }
+
+        function showNotUploadedYet(fileName) {
+            tideImage.style.display = 'none';
+            loadingMessage.style.display = 'flex';
+            loadingMessage.classList.add('error');
+            loadingMessage.innerHTML = `
+                <div class="error">
+                    <div>⚠️ まだ画像がアップロードされていません</div>
+                    <div style="margin-top: 8px; font-size: 12px; color: #fca5a5;">${fileName}</div>
+                </div>
+            `;
         }
 
         async function preloadImageUrl(url, timeoutMs = FETCH_TIMEOUT_MS) {
@@ -923,7 +949,7 @@
                 const hours = String(currentTime.getHours()).padStart(2, '0');
                 const mins = String(currentTime.getMinutes()).padStart(2, '0');
 
-                const fileName = `${year}${month}${day}${hours}${mins}.png`;
+                const fileName = `${R2_IMAGE_PREFIX}${year}${month}${day}${hours}${mins}.png`;
                 fileNames.push(fileName);
 
                 currentTime.setMinutes(currentTime.getMinutes() + IMAGE_INTERVAL);
@@ -1286,11 +1312,23 @@
                         showImageInfo(fileName);
                         prefetchAroundIndex(currentImageIndex);
                     } else {
+                        if (fetchingStatusCache[fileName] === 'failed') {
+                            showNotUploadedYet(fileName);
+                            showImageInfo(fileName);
+                            return;
+                        }
                         throw new Error('取得に失敗しました');
                     }
                 }
 
             } catch (error) {
+                if (isImageNotFoundError(error)) {
+                    addDebugLog(`⚠️ 未アップロード: ${fileName}`, 'warning');
+                    showNotUploadedYet(fileName);
+                    showImageInfo(fileName);
+                    return;
+                }
+
                 addDebugLog(`✗ エラー: ${error.message}`, 'error');
                 console.error('Error updating image:', error);
                 showError(`画像表示エラー: ${error.message}`);
@@ -1415,12 +1453,14 @@
         }
 
         function showImageInfo(fileName) {
+            const baseName = fileName.includes('/') ? fileName.split('/').pop() : fileName;
+
             // ファイル名からタイムスタンプを抽出
-            const year = fileName.substring(0, 4);
-            const month = fileName.substring(4, 6);
-            const day = fileName.substring(6, 8);
-            const hours = fileName.substring(8, 10);
-            const minutes = fileName.substring(10, 12);
+            const year = baseName.substring(0, 4);
+            const month = baseName.substring(4, 6);
+            const day = baseName.substring(6, 8);
+            const hours = baseName.substring(8, 10);
+            const minutes = baseName.substring(10, 12);
 
             const timestamp = `${year}-${month}-${day} ${hours}:${minutes}`;
 
