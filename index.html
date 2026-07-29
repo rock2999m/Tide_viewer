@@ -96,6 +96,20 @@
             color: #334155;
         }
 
+        .date-section select {
+            width: 50%;
+            max-width: 190px;
+            min-width: 150px;
+            padding: 2px 8px;
+            height: 24px;
+            border: 2px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #334155;
+            background: white;
+            margin-bottom: 8px;
+        }
+
         .date-section input[type="date"]:focus {
             outline: none;
             border-color: #3b82f6;
@@ -523,6 +537,15 @@
                 padding: 1px 6px;
                 font-size: 11px;
             }
+
+            .date-section select {
+                width: 50%;
+                max-width: 170px;
+                min-width: 130px;
+                height: 22px;
+                padding: 1px 6px;
+                font-size: 11px;
+            }
         }
     </style>
 </head>
@@ -538,6 +561,11 @@
         <div class="content">
             <!-- 日付選択 -->
             <div class="date-section">
+                <label for="areaSelect">🌍 エリアを選択してください</label>
+                <select id="areaSelect">
+                    <option value="akashi">明石</option>
+                    <option value="naruto">鳴門</option>
+                </select>
                 <label for="datePicker">📅 日付を選択してください</label>
                 <input type="date" id="datePicker">
                 <div class="date-info">
@@ -617,7 +645,7 @@
             </div>
 
             <div class="app-footer">
-                Version: v2.0.0
+                Version: v1.2.0
             </div>
         </div>
     </div>
@@ -635,7 +663,12 @@
         const FETCH_TIMEOUT_MS = 15000;
         const BINARY_IMAGE_ENDPOINT = '/api/tideImageBinary';
         const MIN_VALID_IMAGE_BYTES = 2048;
-        const R2_IMAGE_PREFIX = 'mirc/akashi/';
+        const DEFAULT_AREA = 'akashi';
+        const AREA_STORAGE_KEY = 'tideViewer_selectedArea';
+        const AREA_LABELS = {
+            akashi: '明石',
+            naruto: '鳴門'
+        };
 
         // ============ デバッグ用グローバル変数 ============
         let debugMode = true;
@@ -645,6 +678,7 @@
         let tideImages = []; // ファイル名一覧
         let currentImageIndex = 0;
         let selectedDate = null;
+        let selectedArea = DEFAULT_AREA;
         
         // ★ 新規：イメージキャッシュシステム
         let imageBlobCache = {}; // { fileName: blobUrl }
@@ -657,6 +691,7 @@
 
         // ============ DOM要素 ============
         const datePicker = document.getElementById('datePicker');
+        const areaSelect = document.getElementById('areaSelect');
         const tideImage = document.getElementById('tideImage');
         const loadingMessage = document.getElementById('loadingMessage');
         const imageSlider = document.getElementById('imageSlider');
@@ -673,6 +708,13 @@
             addDebugLog('🚀 アプリケーション起動', 'info');
             addDebugLog(`⚙️ Worker URL: ${WORKER_BASE_URL}`, 'info');
             addDebugLog(`🔐 Auth Token: ${WORKERS_AUTH_TOKEN.substring(0, 8)}...`, 'warning');
+
+            const savedArea = localStorage.getItem(AREA_STORAGE_KEY);
+            if (savedArea && AREA_LABELS[savedArea]) {
+                selectedArea = savedArea;
+            }
+            areaSelect.value = selectedArea;
+            addDebugLog(`🌍 エリア: ${AREA_LABELS[selectedArea] || selectedArea}`, 'info');
             
             // 本日を初期値に設定
             const today = new Date();
@@ -729,7 +771,7 @@
         }
 
         function buildBinaryImageUrl(fileName) {
-            return `${WORKER_BASE_URL}${BINARY_IMAGE_ENDPOINT}?key=${encodeURIComponent(fileName)}&token=${encodeURIComponent(WORKERS_AUTH_TOKEN)}`;
+            return `${WORKER_BASE_URL}${BINARY_IMAGE_ENDPOINT}?area=${encodeURIComponent(selectedArea)}&fileName=${encodeURIComponent(fileName)}&token=${encodeURIComponent(WORKERS_AUTH_TOKEN)}`;
         }
 
         async function canDecodeImageBlob(blob) {
@@ -881,6 +923,19 @@
             loadTideImages();
         });
 
+        areaSelect.addEventListener('change', (e) => {
+            selectedArea = e.target.value;
+            localStorage.setItem(AREA_STORAGE_KEY, selectedArea);
+            addDebugLog(`🌍 エリアが変更されました: ${AREA_LABELS[selectedArea] || selectedArea}`, 'info');
+
+            currentImageIndex = 0;
+            clearImageCache();
+            releaseImageMemoryCache();
+            fetchingStatusCache = {};
+            backgroundFetchQueue = [];
+            loadTideImages();
+        });
+
         imageSlider.addEventListener('input', (e) => {
             currentImageIndex = parseInt(e.target.value);
             addDebugLog(`🎚️ スライダー移動: ${currentImageIndex + 1} / ${tideImages.length}`, 'info');
@@ -949,7 +1004,7 @@
                 const hours = String(currentTime.getHours()).padStart(2, '0');
                 const mins = String(currentTime.getMinutes()).padStart(2, '0');
 
-                const fileName = `${R2_IMAGE_PREFIX}${year}${month}${day}${hours}${mins}.png`;
+                const fileName = `${year}${month}${day}${hours}${mins}.png`;
                 fileNames.push(fileName);
 
                 currentTime.setMinutes(currentTime.getMinutes() + IMAGE_INTERVAL);
@@ -960,7 +1015,7 @@
 
         // ============ キャッシング処理 ============
         function getCacheKey(date) {
-            return `tideImages_${formatDate(date)}`;
+            return `tideImages_${selectedArea}_${formatDate(date)}`;
         }
 
         function getImageCache(date) {
@@ -1065,6 +1120,7 @@
             if (!selectedDate) return;
 
             addDebugLog(`📅 日付選択: ${formatDate(selectedDate)}`, 'info');
+            addDebugLog(`🌍 表示エリア: ${AREA_LABELS[selectedArea] || selectedArea}`, 'info');
             showLoading();
             updateDateRangeInfo();
 
