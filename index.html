@@ -129,32 +129,30 @@
 
         /* ========== 画像表示エリア ========== */
         .image-display {
-            background: #000;
+            background: transparent;
             border-radius: 8px;
             overflow: hidden;
             margin-bottom: 20px;
-            aspect-ratio: 16 / 9;
             width: 100%;
             max-width: 100%;
-            height: clamp(220px, 46dvh, 420px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
             position: relative;
         }
 
         .image-display img {
-            max-width: 100%;
-            max-height: 100%;
-            object-fit: contain;
+            display: block;
             width: 100%;
-            height: 100%;
+            height: auto;
         }
 
         .image-display .loading {
+            min-height: 180px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             color: white;
             font-size: 14px;
             text-align: center;
+            background: #0f172a;
         }
 
         .image-display .error {
@@ -164,18 +162,17 @@
         }
 
         .image-info {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            right: 10px;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
+            margin-top: -8px;
+            margin-bottom: 20px;
+            background: #eef2ff;
+            color: #1e3a8a;
             padding: 8px 12px;
             border-radius: 6px;
             font-size: 12px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            border: 1px solid #c7d2fe;
         }
 
         .image-timestamp {
@@ -260,9 +257,9 @@
 
         /* 矢印ボタン */
         .button-group {
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 10px;
-            justify-content: center;
         }
 
         button {
@@ -350,7 +347,7 @@
             font-size: 12px;
             color: #15803d;
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-start;
             align-items: center;
         }
 
@@ -360,18 +357,50 @@
             color: #991b1b;
         }
 
+        .debug-console {
+            margin-top: 30px;
+            border: 1px solid #374151;
+            border-radius: 8px;
+            background: #111827;
+            overflow: hidden;
+        }
+
+        .debug-console summary {
+            padding: 12px 15px;
+            color: #93c5fd;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+            list-style: none;
+        }
+
+        .debug-console summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .debug-console summary::after {
+            content: '▼';
+            float: right;
+            transition: transform 0.2s ease;
+        }
+
+        .debug-console[open] summary::after {
+            transform: rotate(180deg);
+        }
+
         /* ========== デバッグパネル ========== */
         .debug-panel {
-            margin-top: 30px;
+            margin-top: 0;
             padding: 15px;
             background: #1f2937;
-            border-radius: 8px;
+            border-radius: 0;
             color: #e5e7eb;
             font-family: 'Courier New', monospace;
             font-size: 12px;
             max-height: 300px;
             overflow-y: auto;
-            border: 1px solid #374151;
+            border-top: 1px solid #374151;
         }
 
         .debug-panel h3 {
@@ -458,12 +487,6 @@
                 font-size: 22px;
             }
 
-            .image-display {
-                height: auto;
-                min-height: clamp(170px, 30dvh, 240px);
-                max-height: 38dvh;
-            }
-
             button {
                 padding: 10px 16px;
                 font-size: 14px;
@@ -474,10 +497,6 @@
                 flex-direction: column;
                 gap: 5px;
                 text-align: center;
-            }
-
-            .button-group {
-                flex-direction: column;
             }
 
             .slider-container {
@@ -505,11 +524,6 @@
         @media (max-width: 430px) {
             .content {
                 padding: 14px;
-            }
-
-            .image-display {
-                min-height: clamp(150px, 28dvh, 220px);
-                max-height: 34dvh;
             }
 
             .header {
@@ -568,10 +582,6 @@
                 </select>
                 <label for="datePicker">📅 日付を選択してください</label>
                 <input type="date" id="datePicker">
-                <div class="date-info">
-                    <div>✓ 表示範囲: 選択日 AM 7:00 の前24時間 ～ 後48時間（計72時間）</div>
-                    <div id="dateRangeInfo" style="margin-top: 8px; color: #1e3a8a;"></div>
-                </div>
             </div>
 
             <!-- 画像表示エリア -->
@@ -581,6 +591,10 @@
                     <div class="loader"></div>
                     <p style="margin-top: 10px;">画像を読み込み中...</p>
                 </div>
+            </div>
+
+            <div class="image-info" id="imageInfoBar">
+                <span class="image-timestamp" id="imageTimestamp">📷 --</span>
             </div>
 
             <!-- コントロール -->
@@ -609,12 +623,7 @@
                 <!-- キャッシュ情報 -->
                 <div class="cache-info" id="cacheInfo" style="display: none;">
                     <span id="cacheMessage"></span>
-                    <span style="cursor: pointer; user-select: none;" onclick="clearCache()">✕ キャッシュクリア</span>
                 </div>
-
-                <button class="btn-cache-clear" id="btnCacheClear" onclick="clearCache()">
-                    🧹 キャッシュをクリア
-                </button>
 
                 <!-- ★ 新規：取得進捗パネル -->
                 <div style="margin-top: 15px; padding: 12px; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 6px; display: none;" id="progressPanel">
@@ -636,16 +645,23 @@
                 </div>
             </div>
 
-            <!-- デバッグパネル -->
-            <div class="debug-panel">
-                <h3>🔍 デバッグコンソール</h3>
-                <div id="debugLogs"></div>
-                <button class="debug-button" onclick="clearDebugLogs()">ログをクリア</button>
-                <button class="debug-button" onclick="toggleDebugDetails()">詳細情報表示</button>
+            <div class="date-info">
+                <div>✓ 表示範囲: 選択日 AM 7:00 の前24時間 ～ 後48時間（計72時間）</div>
+                <div id="dateRangeInfo" style="margin-top: 8px; color: #1e3a8a;"></div>
             </div>
 
+            <!-- デバッグパネル -->
+            <details class="debug-console">
+                <summary>🔍 デバッグコンソール（タップで展開）</summary>
+                <div class="debug-panel">
+                    <div id="debugLogs"></div>
+                    <button class="debug-button" onclick="clearDebugLogs()">ログをクリア</button>
+                    <button class="debug-button" onclick="toggleDebugDetails()">詳細情報表示</button>
+                </div>
+            </details>
+
             <div class="app-footer">
-                Version: v1.2.0
+                Version: v2.1.0
             </div>
         </div>
     </div>
@@ -702,6 +718,7 @@
         const cacheMessage = document.getElementById('cacheMessage');
         const dateRangeInfo = document.getElementById('dateRangeInfo');
         const debugLogsContainer = document.getElementById('debugLogs');
+        const imageTimestamp = document.getElementById('imageTimestamp');
 
         // ============ 初期化 ============
         window.addEventListener('load', () => {
@@ -1504,7 +1521,6 @@
 
             dateRangeInfo.innerHTML = `
                 <strong>表示範囲:</strong> ${formatDateTime(startTime)} ～ ${formatDateTime(endTime)}
-                <br><strong>画像数:</strong> ${tideImages.length || '計算中...'}枚 (10分間隔)
             `;
         }
 
@@ -1520,19 +1536,7 @@
 
             const timestamp = `${year}-${month}-${day} ${hours}:${minutes}`;
 
-            // 既存の画像情報を削除
-            const oldInfo = document.querySelector('.image-info');
-            if (oldInfo) oldInfo.remove();
-
-            // 新しい画像情報を追加
-            const imageDisplay = document.querySelector('.image-display');
-            const info = document.createElement('div');
-            info.className = 'image-info';
-            info.innerHTML = `
-                <span class="image-timestamp">📷 ${timestamp}</span>
-                <span class="image-count">${currentImageIndex + 1} / ${tideImages.length}</span>
-            `;
-            imageDisplay.appendChild(info);
+            imageTimestamp.textContent = `📷 ${timestamp}`;
         }
 
         function showLoading() {
