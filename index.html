@@ -702,6 +702,7 @@
         let backgroundFetchQueue = []; // バックグラウンド取得待ちキュー
         let isBackgroundFetching = false; // バックグラウンド取得中フラグ
         let currentRenderToken = 0; // 古い描画処理を破棄するためのトークン
+        let activeLoadToken = 0; // 古い取得セッションを破棄するためのトークン
         const MAX_CONCURRENT_REQUESTS = 6; // 並行リクエスト数（ブラウザ制限に合わせる）
         const PRIORITY_RANGE_HOURS = 6; // ± 6時間を優先取得
 
@@ -787,8 +788,12 @@
             imageBlobCache = {};
         }
 
-        function buildBinaryImageUrl(fileName) {
-            return `${WORKER_BASE_URL}${BINARY_IMAGE_ENDPOINT}?area=${encodeURIComponent(selectedArea)}&fileName=${encodeURIComponent(fileName)}&token=${encodeURIComponent(WORKERS_AUTH_TOKEN)}`;
+        function buildAreaImageCacheKey(area, fileName) {
+            return `${String(area || DEFAULT_AREA).toLowerCase()}::${fileName}`;
+        }
+
+        function buildBinaryImageUrl(fileName, area = selectedArea) {
+            return `${WORKER_BASE_URL}${BINARY_IMAGE_ENDPOINT}?area=${encodeURIComponent(area)}&fileName=${encodeURIComponent(fileName)}&token=${encodeURIComponent(WORKERS_AUTH_TOKEN)}`;
         }
 
         async function canDecodeImageBlob(blob) {
@@ -842,12 +847,12 @@
             return { ok: true };
         }
 
-        async function getImageFromSwCache(fileName) {
+        async function getImageFromSwCache(fileName, area = selectedArea) {
             if (!('caches' in window)) {
                 return null;
             }
 
-            const imageUrl = buildBinaryImageUrl(fileName);
+            const imageUrl = buildBinaryImageUrl(fileName, area);
             const cachedResponse = await caches.match(imageUrl);
             if (!cachedResponse || !cachedResponse.ok) {
                 return null;
@@ -864,8 +869,8 @@
             return URL.createObjectURL(blob);
         }
 
-        async function fetchImageFromNetwork(fileName) {
-            const imageUrl = buildBinaryImageUrl(fileName);
+        async function fetchImageFromNetwork(fileName, area = selectedArea) {
+            const imageUrl = buildBinaryImageUrl(fileName, area);
             const imageRes = await fetchWithTimeout(imageUrl, {}, FETCH_TIMEOUT_MS);
             if (!imageRes.ok) {
                 const error = new Error(`HTTP ${imageRes.status}`);
@@ -931,6 +936,8 @@
         datePicker.addEventListener('change', (e) => {
             selectedDate = new Date(e.target.value);
             addDebugLog(`📅 日付が変更されました: ${formatDate(selectedDate)}`, 'info');
+            activeLoadToken++;
+            currentRenderToken++;
             currentImageIndex = 0;
             clearImageCache(selectedDate); // 日付変更時はキャッシュクリア
             releaseImageMemoryCache(); // ★ イメージブロブキャッシュもクリア
@@ -945,6 +952,8 @@
             localStorage.setItem(AREA_STORAGE_KEY, selectedArea);
             addDebugLog(`🌍 エリアが変更されました: ${AREA_LABELS[selectedArea] || selectedArea}`, 'info');
 
+            activeLoadToken++;
+            currentRenderToken++;
             currentImageIndex = 0;
             clearImageCache();
             releaseImageMemoryCache();
@@ -1136,8 +1145,11 @@
         async function loadTideImages() {
             if (!selectedDate) return;
 
+            const loadToken = ++activeLoadToken;
+            const loadArea = selectedArea;
+
             addDebugLog(`📅 日付選択: ${formatDate(selectedDate)}`, 'info');
-            addDebugLog(`🌍 表示エリア: ${AREA_LABELS[selectedArea] || selectedArea}`, 'info');
+            addDebugLog(`🌍 表示エリア: ${AREA_LABELS[loadArea] || loadArea}`, 'info');
             showLoading();
             updateDateRangeInfo();
 
@@ -1172,7 +1184,11 @@
                 const priorityEnd = Math.min(centerIndex + 2, fullFileNames.length);
                 const priorityFileNames = fullFileNames.slice(priorityStart, priorityEnd);
                 addDebugLog(`⚡ 優先取得フェーズ1: ${priorityFileNames.length}枚`, 'info');
-                await fetchTideImageBatch(priorityFileNames);
+                await fetchTideImageBatch(priorityFileNames, loadArea, loadToken);
+
+                if (loadToken !== activeLoadToken || loadArea !== selectedArea) {
+                    return;
+                }
 
                 // 最初の画像を表示（優先取得後すぐ表示）
                 await updateImage();
@@ -1184,13 +1200,17 @@
 
                 if (secondaryFileNames.length > 0) {
                     addDebugLog(`⚡ 優先取得フェーズ2: ${secondaryFileNames.length}枚`, 'info');
-                    await fetchTideImageBatch(secondaryFileNames);
+                    await fetchTideImageBatch(secondaryFileNames, loadArea, loadToken);
+
+                    if (loadToken !== activeLoadToken || loadArea !== selectedArea) {
+                        return;
+                    }
                 }
 
                 // 取得フェーズ3: 残りを未来→過去の順でバックグラウンド取得
                 backgroundFetchQueue = buildNearbyFirstQueue(fullFileNames, centerIndex, secondaryEnd);
                 addDebugLog(`🔄 バックグラウンド取得キュー作成: ${backgroundFetchQueue.length}枚（近傍優先）`, 'info');
-                startBackgroundFetch();
+                startBackgroundFetch(loadArea, loadToken);
                 
                 const elapsedTime = Date.now() - startTime;
                 addDebugLog(`✓ 優先取得完了: ${elapsedTime}ms`, 'success');
@@ -1210,7 +1230,7 @@
          * 入力: ファイル名配列
          * 出力: URL をキャッシュに保存
          */
-        async function fetchTideImageBatch(fileNames) {
+        async function fetchTideImageBatch(fileNames, area = selectedArea, loadToken = activeLoadToken) {
             if (!fileNames || fileNames.length === 0) {
                 throw new Error('ファイル名配列が空です');
             }
@@ -1229,31 +1249,44 @@
                     addDebugLog(`📡 バイナリ画像を先読み... (${chunkIndex + 1}/${totalChunks}, ${chunkFileNames.length}件)`, 'info');
 
                     const promises = chunkFileNames.map(async (fileName) => {
-                        if (imageBlobCache[fileName]) {
+                        const cacheKey = buildAreaImageCacheKey(area, fileName);
+                        if (imageBlobCache[cacheKey]) {
                             return;
                         }
-                        if (fetchingStatusCache[fileName] === 'fetching') {
+                        if (fetchingStatusCache[cacheKey] === 'fetching') {
                             return;
                         }
 
-                        fetchingStatusCache[fileName] = 'fetching';
+                        fetchingStatusCache[cacheKey] = 'fetching';
 
                         try {
                             // 取得順序: memory -> SW cache -> network fetch
-                            const swCachedBlobUrl = await getImageFromSwCache(fileName);
+                            const swCachedBlobUrl = await getImageFromSwCache(fileName, area);
+                            if (loadToken !== activeLoadToken || area !== selectedArea) {
+                                if (swCachedBlobUrl && isBlobUrl(swCachedBlobUrl)) {
+                                    URL.revokeObjectURL(swCachedBlobUrl);
+                                }
+                                return;
+                            }
                             if (swCachedBlobUrl) {
-                                imageBlobCache[fileName] = swCachedBlobUrl;
-                                fetchingStatusCache[fileName] = 'done';
+                                imageBlobCache[cacheKey] = swCachedBlobUrl;
+                                fetchingStatusCache[cacheKey] = 'done';
                                 cachedCount++;
                                 return;
                             }
 
-                            const networkBlobUrl = await fetchImageFromNetwork(fileName);
-                            imageBlobCache[fileName] = networkBlobUrl;
-                            fetchingStatusCache[fileName] = 'done';
+                            const networkBlobUrl = await fetchImageFromNetwork(fileName, area);
+                            if (loadToken !== activeLoadToken || area !== selectedArea) {
+                                if (networkBlobUrl && isBlobUrl(networkBlobUrl)) {
+                                    URL.revokeObjectURL(networkBlobUrl);
+                                }
+                                return;
+                            }
+                            imageBlobCache[cacheKey] = networkBlobUrl;
+                            fetchingStatusCache[cacheKey] = 'done';
                             cachedCount++;
                         } catch (error) {
-                            fetchingStatusCache[fileName] = 'failed';
+                            fetchingStatusCache[cacheKey] = 'failed';
                             failedCount++;
                         }
                     });
@@ -1274,7 +1307,7 @@
         }
 
         // 残り画像を未来→過去の順でバックグラウンド取得
-        async function startBackgroundFetch() {
+        async function startBackgroundFetch(area = selectedArea, loadToken = activeLoadToken) {
             if (isBackgroundFetching || backgroundFetchQueue.length === 0) {
                 return;
             }
@@ -1288,21 +1321,28 @@
                     const batch = [];
 
                     while (backgroundFetchQueue.length > 0 && batch.length < BG_BATCH_SIZE) {
+                        if (loadToken !== activeLoadToken || area !== selectedArea) {
+                            break;
+                        }
                         const fileName = backgroundFetchQueue.shift();
 
                         // 既にキャッシュ済みならスキップ
-                        if (imageBlobCache[fileName]) {
+                        const cacheKey = buildAreaImageCacheKey(area, fileName);
+                        if (imageBlobCache[cacheKey]) {
                             continue;
                         }
                         batch.push(fileName);
                     }
 
                     if (batch.length === 0) {
+                        if (loadToken !== activeLoadToken || area !== selectedArea) {
+                            break;
+                        }
                         continue;
                     }
 
                     try {
-                        await fetchTideImageBatch(batch);
+                        await fetchTideImageBatch(batch, area, loadToken);
                     } catch (error) {
                         addDebugLog(`⚠️ バックグラウンド取得バッチ失敗（継続）: ${error.message}`, 'warning');
                         // バッチ失敗しても継続
@@ -1325,19 +1365,21 @@
             }
 
             const renderToken = ++currentRenderToken;
+            const renderArea = selectedArea;
             const fileName = tideImages[currentImageIndex];
+            const cacheKey = buildAreaImageCacheKey(renderArea, fileName);
             updateSliderValue();
             addDebugLog(`📸 画像を更新: ${fileName} (index: ${currentImageIndex})`, 'info');
 
             try {
                 // ★ 修正：キャッシュをチェック
-                if (imageBlobCache[fileName]) {
+                if (imageBlobCache[cacheKey]) {
                     addDebugLog(`✓ キャッシュから画像を取得`, 'success');
-                    tideImage.src = imageBlobCache[fileName];
+                    tideImage.src = imageBlobCache[cacheKey];
                     tideImage.style.display = 'block';
                     loadingMessage.style.display = 'none';
                     showImageInfo(fileName);
-                    prefetchAroundIndex(currentImageIndex);
+                    prefetchAroundIndex(currentImageIndex, renderArea, activeLoadToken);
                     return;
                 }
 
@@ -1349,13 +1391,13 @@
                 const PRIORITY_FETCH_COUNT = 6;
                 const priorityFileNames = tideImages
                     .slice(Math.max(0, currentImageIndex - 2), Math.min(currentImageIndex + PRIORITY_FETCH_COUNT, tideImages.length))
-                    .filter(name => !imageBlobCache[name]);
+                    .filter(name => !imageBlobCache[buildAreaImageCacheKey(renderArea, name)]);
 
                 if (priorityFileNames.length > 0) {
-                    await fetchTideImageBatch(priorityFileNames);
+                    await fetchTideImageBatch(priorityFileNames, renderArea, activeLoadToken);
                 }
 
-                if (renderToken !== currentRenderToken) {
+                if (renderToken !== currentRenderToken || renderArea !== selectedArea) {
                     return;
                 }
                 
@@ -1363,29 +1405,29 @@
                 addDebugLog(`⏱️ 取得時間: ${elapsedTime}ms`, 'info');
 
                 // 取得結果をチェック
-                if (imageBlobCache[fileName]) {
-                    tideImage.src = imageBlobCache[fileName];
+                if (imageBlobCache[cacheKey]) {
+                    tideImage.src = imageBlobCache[cacheKey];
                     tideImage.style.display = 'block';
                     loadingMessage.style.display = 'none';
                     showImageInfo(fileName);
-                    prefetchAroundIndex(currentImageIndex);
+                    prefetchAroundIndex(currentImageIndex, renderArea, activeLoadToken);
                 } else {
                     // 最終フォールバック: 単体取得を一度だけ試す
                     addDebugLog(`⚠️ 優先取得で未取得のため単体取得を試行します: ${fileName}`, 'warning');
-                    await fetchSingleImage(fileName);
+                    await fetchSingleImage(fileName, renderArea, activeLoadToken);
 
-                    if (renderToken !== currentRenderToken) {
+                    if (renderToken !== currentRenderToken || renderArea !== selectedArea) {
                         return;
                     }
 
-                    if (imageBlobCache[fileName]) {
-                        tideImage.src = imageBlobCache[fileName];
+                    if (imageBlobCache[cacheKey]) {
+                        tideImage.src = imageBlobCache[cacheKey];
                         tideImage.style.display = 'block';
                         loadingMessage.style.display = 'none';
                         showImageInfo(fileName);
-                        prefetchAroundIndex(currentImageIndex);
+                        prefetchAroundIndex(currentImageIndex, renderArea, activeLoadToken);
                     } else {
-                        if (fetchingStatusCache[fileName] === 'failed') {
+                        if (fetchingStatusCache[cacheKey] === 'failed') {
                             showNotUploadedYet(fileName);
                             showImageInfo(fileName);
                             return;
@@ -1427,7 +1469,7 @@
             return queue;
         }
 
-        async function prefetchAroundIndex(index) {
+        async function prefetchAroundIndex(index, area = selectedArea, loadToken = activeLoadToken) {
             const PREFETCH_RADIUS = 4;
             const start = Math.max(0, index - PREFETCH_RADIUS);
             const end = Math.min(tideImages.length - 1, index + PREFETCH_RADIUS);
@@ -1435,7 +1477,8 @@
 
             for (let i = start; i <= end; i++) {
                 const name = tideImages[i];
-                if (!imageBlobCache[name] && fetchingStatusCache[name] !== 'fetching') {
+                const cacheKey = buildAreaImageCacheKey(area, name);
+                if (!imageBlobCache[cacheKey] && fetchingStatusCache[cacheKey] !== 'fetching') {
                     targets.push(name);
                 }
             }
@@ -1445,7 +1488,7 @@
             }
 
             try {
-                await fetchTideImageBatch(targets);
+                await fetchTideImageBatch(targets, area, loadToken);
             } catch (error) {
                 addDebugLog(`⚠️ 近傍プリフェッチ失敗（継続）: ${error.message}`, 'warning');
             }
@@ -1497,8 +1540,8 @@
         */
 
         // ============ フォールバック：単一画像取得 ============
-        async function fetchSingleImage(fileName) {
-            return fetchTideImageBatch([fileName]);
+        async function fetchSingleImage(fileName, area = selectedArea, loadToken = activeLoadToken) {
+            return fetchTideImageBatch([fileName], area, loadToken);
         }
 
         // ============ UI更新 ============
