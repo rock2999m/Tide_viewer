@@ -258,8 +258,19 @@
         /* 矢印ボタン */
         .button-group {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 10px;
+        }
+
+        .button-group button {
+            padding: 10px 8px;
+            font-size: 13px;
+            min-height: 42px;
+        }
+
+        .button-group button span {
+            font-size: 20px;
+            line-height: 1;
         }
 
         button {
@@ -286,15 +297,15 @@
         }
 
         .btn-prev {
-            background: #ef4444;
+            background: #10b981;
             color: white;
             flex: 1;
         }
 
         .btn-prev:hover {
-            background: #dc2626;
+            background: #059669;
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
         }
 
         .btn-prev:active {
@@ -314,6 +325,40 @@
         }
 
         .btn-next:active {
+            transform: translateY(0);
+        }
+
+        .btn-day-advance {
+            margin-top: 0;
+            width: auto;
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-day-advance:hover {
+            background: #059669;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-day-advance:active {
+            transform: translateY(0);
+        }
+
+        .btn-day-back {
+            margin-top: 0;
+            width: auto;
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-day-back:hover {
+            background: #059669;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-day-back:active {
             transform: translateY(0);
         }
 
@@ -612,11 +657,17 @@
 
                 <!-- 矢印ボタン -->
                 <div class="button-group">
-                    <button class="btn-prev" id="btnPrev">
-                        <span>◀ 前の画像</span>
+                    <button class="btn-day-back" id="btnPrevDay" aria-label="1日戻る">
+                        <span>⏮</span>
                     </button>
-                    <button class="btn-next" id="btnNext">
-                        <span>次の画像 ▶</span>
+                    <button class="btn-prev" id="btnPrev" aria-label="前の画像">
+                        <span>◀</span>
+                    </button>
+                    <button class="btn-next" id="btnNext" aria-label="次の画像">
+                        <span>▶</span>
+                    </button>
+                    <button class="btn-day-advance" id="btnNextDay" aria-label="1日進める">
+                        <span>⏭</span>
                     </button>
                 </div>
 
@@ -661,7 +712,7 @@
             </details>
 
             <div class="app-footer">
-                Version: v2.2.1
+                Version: v2.2.2
             </div>
         </div>
     </div>
@@ -679,6 +730,7 @@
         const FETCH_TIMEOUT_MS = 15000;
         const BINARY_IMAGE_ENDPOINT = '/api/tideImageBinary';
         const MIN_VALID_IMAGE_BYTES = 2048;
+        const DAY_SHIFT_IMAGES = 144;
         const DEFAULT_AREA = 'akashi';
         const AREA_STORAGE_KEY = 'tideViewer_selectedArea';
         const AREA_LABELS = {
@@ -715,6 +767,8 @@
         const sliderValue = document.getElementById('sliderValue');
         const btnPrev = document.getElementById('btnPrev');
         const btnNext = document.getElementById('btnNext');
+        const btnPrevDay = document.getElementById('btnPrevDay');
+        const btnNextDay = document.getElementById('btnNextDay');
         const cacheInfo = document.getElementById('cacheInfo');
         const cacheMessage = document.getElementById('cacheMessage');
         const dateRangeInfo = document.getElementById('dateRangeInfo');
@@ -754,14 +808,9 @@
         });
 
         function setupTouchGuards() {
-            let lastTouchEnd = 0;
-
-            document.addEventListener('touchend', (event) => {
-                const now = Date.now();
-                if (now - lastTouchEnd <= 300) {
-                    event.preventDefault();
-                }
-                lastTouchEnd = now;
+            // タップ操作は妨げず、ダブルタップ時のブラウザ既定ズームのみ抑止
+            document.addEventListener('dblclick', (event) => {
+                event.preventDefault();
             }, { passive: false });
         }
 
@@ -984,6 +1033,30 @@
                 addDebugLog(`➡️ 次の画像へ: ${currentImageIndex + 1}`, 'info');
                 updateImage();
             }
+        });
+
+        btnNextDay.addEventListener('click', () => {
+            if (!tideImages.length) {
+                return;
+            }
+
+            const nextIndex = Math.min(tideImages.length - 1, currentImageIndex + DAY_SHIFT_IMAGES);
+            currentImageIndex = nextIndex;
+            imageSlider.value = currentImageIndex;
+            addDebugLog(`⏭ 144枚進めました: ${currentImageIndex + 1} / ${tideImages.length}`, 'info');
+            updateImage();
+        });
+
+        btnPrevDay.addEventListener('click', () => {
+            if (!tideImages.length) {
+                return;
+            }
+
+            const prevIndex = Math.max(0, currentImageIndex - DAY_SHIFT_IMAGES);
+            currentImageIndex = prevIndex;
+            imageSlider.value = currentImageIndex;
+            addDebugLog(`⏮ 144枚戻しました: ${currentImageIndex + 1} / ${tideImages.length}`, 'info');
+            updateImage();
         });
 
         // ============ 日付処理 ============
