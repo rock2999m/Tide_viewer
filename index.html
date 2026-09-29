@@ -697,7 +697,7 @@
             </div>
 
             <div class="date-info">
-                <div>✓ 表示範囲: 選択日 AM 7:00 の前24時間 ～ 後48時間（計72時間）</div>
+                <div>✓ 表示範囲: 選択日 AM 7:00 の前72時間 ～ 後72時間（計144時間）</div>
                 <div id="dateRangeInfo" style="margin-top: 8px; color: #1e3a8a;"></div>
             </div>
 
@@ -723,8 +723,8 @@
         const WORKERS_AUTH_TOKEN = 'token_dev_123';
         const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24時間
         const BASE_HOUR = 7; // AM 7:00
-        const BEFORE_HOURS = 24;
-        const AFTER_HOURS = 48;
+        const BEFORE_HOURS = 72;
+        const AFTER_HOURS = 72;
         const TOTAL_HOURS = BEFORE_HOURS + AFTER_HOURS;
         const IMAGE_INTERVAL = 10; // 分
         const FETCH_TIMEOUT_MS = 15000;
@@ -1227,9 +1227,10 @@
             updateDateRangeInfo();
 
             try {
-                // ★ 修正：前後24時間（48時間分、288個）のファイル名を全て生成
-                addDebugLog(`🔍 288個のファイル名を生成中...`, 'info');
-                const fullFileNames = generateTideImageFileNames(selectedDate, 24, 24); // 前24h + 後24h
+                // 選択日AM7:00を基準に前後の表示範囲分のファイル名を生成
+                const expectedFileCount = Math.floor((TOTAL_HOURS * 60) / IMAGE_INTERVAL) + 1;
+                addDebugLog(`🔍 ${expectedFileCount}個のファイル名を生成中...`, 'info');
+                const fullFileNames = generateTideImageFileNames(selectedDate, BEFORE_HOURS, AFTER_HOURS);
                 
                 if (fullFileNames.length === 0) {
                     throw new Error('ファイル名の生成に失敗しました');
@@ -1243,7 +1244,7 @@
                 
                 // ★ 初期表示位置を選択日付のAM7:00に設定
                 const imagesPerHour = 60 / IMAGE_INTERVAL; // 6画像/時間
-                const centerIndex = Math.floor(24 * imagesPerHour); // 開始(前日7:00)から24時間後 = 選択日7:00
+                const centerIndex = Math.floor(BEFORE_HOURS * imagesPerHour); // 開始時刻から選択日7:00までのオフセット
                 currentImageIndex = centerIndex;
                 imageSlider.value = centerIndex;
                 addDebugLog(`🎚️ スライダーをリセット (${centerIndex} / ${fullFileNames.length})`, 'info');
